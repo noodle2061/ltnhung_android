@@ -1,0 +1,29 @@
+<resources>
+    <string name="app_name">FCM Logger App</string>
+    <string name="permission_needed_title">Cần cấp quyền</string>
+    <string name="permission_needed_message">Ứng dụng cần quyền Thông báo để hiển thị tin nhắn từ server. Vui lòng cấp quyền trong cài đặt.</string>
+    <string name="settings">Cài đặt</string>
+    <string name="cancel">Hủy</string>
+
+    <string name="default_notification_channel_id" translatable="false">fcm_default_channel</string>
+    <string name="default_notification_channel_name">Thông báo chung</string>
+    <string name="default_notification_channel_description">Kênh thông báo mặc định cho Firebase Cloud Messaging</string>
+
+    <string name="fcm_log_title">Nhật ký FCM</string>
+    <string name="clear_log">Xóa Log</string>
+    <string name="log_cleared">Nhật ký đã được xóa.</string>
+    <string name="fcm_token_label">FCM Token hiện tại:</string>
+    <string name="token_not_available">Token chưa có sẵn</string>
+
+    <string name="play_audio">Nghe Audio</string>
+    <string name="pause_audio">Tạm dừng</string>
+    <string name="audio_status_idle">Trạng thái: Chờ</string>
+    <string name="audio_status_preparing">Trạng thái: Đang chuẩn bị...</string>
+    <string name="audio_status_playing">Trạng thái: Đang phát</string>
+    <string name="audio_status_paused">Trạng thái: Tạm dừng</string>
+    <string name="audio_status_completed">Trạng thái: Hoàn thành</string>
+    <string name="audio_status_error">Trạng thái: Lỗi phát</string>
+    <string name="no_audio_url">Không có URL audio để phát.</string>
+    <string name="error_playing_audio">Lỗi khi phát audio: %1$s</string>
+
+</resources>

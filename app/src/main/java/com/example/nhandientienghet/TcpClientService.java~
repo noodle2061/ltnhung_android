@@ -1,0 +1,390 @@
+package com.example.nhandientienghet; // Thay đổi package name nếu cần
+
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
+import android.app.Service;
+import android.content.Context;
+import android.content.Intent;
+import android.content.SharedPreferences; // Import SharedPreferences
+import android.os.Build;
+import android.os.Handler;
+import android.os.IBinder;
+import android.os.Looper;
+import android.text.TextUtils; // Import TextUtils
+import android.util.Log;
+import androidx.annotation.Nullable;
+import androidx.core.app.NotificationCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.InetSocketAddress;
+import java.net.Socket;
+import java.net.SocketTimeoutException;
+import java.nio.charset.StandardCharsets;
+
+public class TcpClientService extends Service {
+
+    private static final String TAG = "TcpClientService";
+    // Xóa IP/Port cố định
+    // private static final String SERVER_IP = "192.168.1.100";
+    // private static final int SERVER_PORT = 65432;
+    private static final int CONNECTION_TIMEOUT = 5000; // 5 giây timeout kết nối
+
+    // Biến lưu trữ IP/Port hiện tại của service
+    private String currentServerIp;
+    private int currentServerPort = -1;
+
+    private Socket socket;
+    private BufferedReader input;
+    private Thread connectionThread;
+    private volatile boolean isRunning = false; // Dùng volatile
+    private volatile String currentStatus = ""; // Lưu trạng thái hiện tại của service
+
+    private static final String CHANNEL_ID = "TcpClientChannel";
+    private static final int NOTIFICATION_ID = 1;
+    private static final int MESSAGE_NOTIFICATION_ID = 2;
+
+    // Actions và Extras cho LocalBroadcastManager
+    public static final String ACTION_UPDATE_STATUS = "com.example.nhandientienghet.UPDATE_STATUS";
+    public static final String ACTION_NEW_MESSAGE = "com.example.nhandientienghet.NEW_MESSAGE";
+    public static final String ACTION_REQUEST_STATUS = "com.example.nhandientienghet.REQUEST_STATUS"; // Action mới
+    public static final String EXTRA_STATUS = "extra_status";
+    public static final String EXTRA_MESSAGE = "extra_message";
+    // Extras mới để nhận IP/Port từ Activity
+    public static final String EXTRA_SERVER_IP = "extra_server_ip";
+    public static final String EXTRA_SERVER_PORT = "extra_server_port";
+
+    private Handler mainHandler;
+    private SharedPreferences sharedPreferences; // Khai báo SharedPreferences
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        Log.d(TAG, "Service onCreate");
+        createNotificationChannel();
+        mainHandler = new Handler(Looper.getMainLooper());
+        // Khởi tạo SharedPreferences
+        sharedPreferences = getSharedPreferences(MainActivity.PREFS_NAME, MODE_PRIVATE);
+        // Đặt trạng thái ban đầu
+        currentStatus = getString(R.string.status_disconnected);
+    }
+
+    @Override
+    public int onStartCommand(Intent intent, int flags, int startId) {
+        Log.d(TAG, "Service onStartCommand Received. Intent: " + intent + ", Flags: " + flags + ", isRunning: " + isRunning);
+
+        if (intent != null) {
+            // Xử lý yêu cầu cập nhật trạng thái từ Activity
+            if (ACTION_REQUEST_STATUS.equals(intent.getAction())) {
+                Log.i(TAG, "Received status request from Activity. Current status: " + currentStatus);
+                sendStatusUpdate(currentStatus); // Gửi lại trạng thái hiện tại
+                return START_STICKY; // Không cần làm gì thêm
+            }
+
+            // Lấy IP và Port từ Intent (khi được start từ Activity)
+            String ipFromIntent = intent.getStringExtra(EXTRA_SERVER_IP);
+            int portFromIntent = intent.getIntExtra(EXTRA_SERVER_PORT, -1);
+
+            Log.d(TAG, "Received IP from Intent: " + ipFromIntent + ", Port: " + portFromIntent);
+
+            // Chỉ bắt đầu kết nối mới nếu service chưa chạy VÀ có IP/Port hợp lệ từ Intent
+            if (!isRunning && !TextUtils.isEmpty(ipFromIntent) && portFromIntent != -1) {
+                currentServerIp = ipFromIntent;
+                currentServerPort = portFromIntent;
+                Log.i(TAG, "Starting Foreground Service and Connection Thread with new IP/Port.");
+                startForeground(NOTIFICATION_ID, createForegroundNotification());
+                isRunning = true;
+                startConnectionThread(); // Bắt đầu kết nối với IP/Port mới
+                updateStatusAndBroadcast(getString(R.string.status_connecting)); // Cập nhật trạng thái
+            } else if (isRunning) {
+                Log.w(TAG, "Service already running. Ignoring start command unless it's a status request.");
+            } else {
+                Log.w(TAG, "Service not running and Intent lacks valid IP/Port. Trying to load from Prefs...");
+                // Trường hợp service bị kill và restart bởi hệ thống (Intent có thể không chứa IP/Port)
+                // Hoặc Intent ban đầu không hợp lệ
+                loadIpPortFromPrefs(); // Thử load từ SharedPreferences
+                if (!TextUtils.isEmpty(currentServerIp) && currentServerPort != -1) {
+                    Log.i(TAG, "Loaded IP/Port from Prefs. Starting connection.");
+                    startForeground(NOTIFICATION_ID, createForegroundNotification());
+                    isRunning = true;
+                    startConnectionThread();
+                    updateStatusAndBroadcast(getString(R.string.status_connecting));
+                } else {
+                    Log.e(TAG, "Cannot start connection: No valid IP/Port found in Intent or SharedPreferences.");
+                    stopSelf(); // Dừng service nếu không có thông tin kết nối
+                }
+            }
+        } else {
+            // Intent is null - Service được restart bởi hệ thống sau khi bị kill
+            Log.w(TAG, "Service restarted by system (Intent is null). Attempting to reconnect using saved IP/Port.");
+            loadIpPortFromPrefs(); // Thử load từ SharedPreferences
+            if (!isRunning && !TextUtils.isEmpty(currentServerIp) && currentServerPort != -1) {
+                Log.i(TAG, "Restarting connection with saved IP/Port.");
+                startForeground(NOTIFICATION_ID, createForegroundNotification());
+                isRunning = true;
+                startConnectionThread();
+                updateStatusAndBroadcast(getString(R.string.status_connecting));
+            } else {
+                Log.e(TAG, "Cannot restart connection: No saved IP/Port found.");
+                stopSelf(); // Dừng nếu không có gì để kết nối lại
+            }
+        }
+
+        return START_STICKY; // Quan trọng: để service được restart nếu bị kill
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        Log.w(TAG, "Service onDestroy");
+        stopConnectionThread(); // Đảm bảo thread và socket được đóng
+        updateStatusAndBroadcast(getString(R.string.status_disconnected)); // Gửi trạng thái cuối cùng
+    }
+
+    @Nullable
+    @Override
+    public IBinder onBind(Intent intent) {
+        return null;
+    }
+
+    // Load IP/Port từ SharedPreferences
+    private void loadIpPortFromPrefs() {
+        currentServerIp = sharedPreferences.getString(MainActivity.PREF_SERVER_IP, null);
+        currentServerPort = sharedPreferences.getInt(MainActivity.PREF_SERVER_PORT, -1);
+        Log.d(TAG, "Loaded from Prefs - IP: " + currentServerIp + ", Port: " + currentServerPort);
+    }
+
+
+    private void startConnectionThread() {
+        if (connectionThread != null && connectionThread.isAlive()) {
+            Log.w(TAG, "Connection thread already running.");
+            return;
+        }
+        // Kiểm tra lại xem có IP/Port hợp lệ không trước khi tạo thread
+        if (TextUtils.isEmpty(currentServerIp) || currentServerPort == -1) {
+            Log.e(TAG, "Cannot start connection thread: Invalid IP or Port.");
+            updateStatusAndBroadcast(getString(R.string.status_error) + ": Invalid IP/Port");
+            stopSelf(); // Dừng service nếu không có thông tin hợp lệ
+            return;
+        }
+
+
+        connectionThread = new Thread(() -> {
+            // Sử dụng IP/Port đã lưu trong biến của service
+            final String targetIp = currentServerIp;
+            final int targetPort = currentServerPort;
+
+            Log.i(TAG, "Connection thread started for " + targetIp + ":" + targetPort);
+            try {
+                Log.i(TAG, "Attempting to connect to " + targetIp + ":" + targetPort);
+                socket = new Socket();
+                socket.connect(new InetSocketAddress(targetIp, targetPort), CONNECTION_TIMEOUT);
+                Log.i(TAG, "Connected to server: " + targetIp + ":" + targetPort);
+                // Cập nhật trạng thái lên Main thread
+                mainHandler.post(() -> updateStatusAndBroadcast(getString(R.string.status_connected)));
+
+                input = new BufferedReader(new InputStreamReader(socket.getInputStream(), StandardCharsets.UTF_8));
+
+                Log.i(TAG, "Starting read loop...");
+                while (isRunning && !Thread.currentThread().isInterrupted() && socket.isConnected() && !socket.isInputShutdown()) {
+                    Log.v(TAG, "Waiting to read line...");
+                    String message = null;
+                    try {
+                        message = input.readLine();
+                        Log.v(TAG, "readLine() returned.");
+                    } catch (IOException readException) {
+                        if (isRunning) {
+                            Log.e(TAG, "IOException during readLine: " + readException.getMessage());
+                        }
+                        break;
+                    }
+
+                    if (message != null) {
+                        Log.i(TAG, "Received message: " + message);
+                        String finalMessage = message;
+                        mainHandler.post(() -> {
+                            if (isRunning) {
+                                sendNewMessage(finalMessage);
+                                showNotification(getString(R.string.new_message_from_server), finalMessage);
+                            }
+                        });
+                    } else {
+                        Log.w(TAG, "readLine returned null. Server likely closed connection.");
+                        break;
+                    }
+                }
+                Log.i(TAG, "Read loop finished. isRunning=" + isRunning + ", isInterrupted=" + Thread.currentThread().isInterrupted() + ", isConnected=" + (socket != null && socket.isConnected()));
+
+            } catch (SocketTimeoutException e) {
+                Log.e(TAG, "Connection timed out: " + targetIp + ":" + targetPort, e);
+                mainHandler.post(() -> updateStatusAndBroadcast(getString(R.string.status_error) + ": Timeout"));
+            } catch (IOException e) {
+                if (isRunning) {
+                    Log.e(TAG, "Connection IOException for " + targetIp + ":" + targetPort + ": " + e.getMessage());
+                    mainHandler.post(() -> updateStatusAndBroadcast(getString(R.string.status_error) + ": " + e.getMessage()));
+                } else {
+                    Log.i(TAG, "Connection IOException after service stopped: " + e.getMessage());
+                }
+            } catch (Exception e) {
+                if (isRunning) {
+                    Log.e(TAG, "Unexpected error in connection thread: ", e);
+                    mainHandler.post(() -> updateStatusAndBroadcast(getString(R.string.status_error) + ": Unexpected error"));
+                }
+            } finally {
+                Log.i(TAG, "Connection thread finally block executing.");
+                cleanupSocket();
+                // Chỉ dừng service nếu nó vẫn đang chạy và gặp lỗi/mất kết nối
+                // Không dừng nếu người dùng chủ động gọi stopService
+                if (isRunning && !currentStatus.equals(getString(R.string.status_disconnected))) {
+                    Log.w(TAG, "Connection lost or error occurred. Stopping service.");
+                    mainHandler.post(() -> {
+                        // Gửi trạng thái lỗi lần cuối trước khi dừng
+                        updateStatusAndBroadcast(getString(R.string.status_error));
+                        stopSelf(); // Dừng service từ bên trong trên Main thread
+                    });
+                    // isRunning sẽ được đặt thành false trong stopConnectionThread được gọi bởi onDestroy
+                }
+            }
+            Log.i(TAG, "Connection thread finished.");
+        });
+        connectionThread.start();
+    }
+
+    private void stopConnectionThread() {
+        Log.w(TAG, "Stopping connection thread...");
+        isRunning = false; // Quan trọng: Đặt cờ này trước
+        if (connectionThread != null) {
+            connectionThread.interrupt();
+            try {
+                connectionThread.join(500);
+            } catch (InterruptedException e) {
+                Log.e(TAG, "Interrupted while waiting for connection thread to join.", e);
+                Thread.currentThread().interrupt();
+            }
+            connectionThread = null;
+        }
+        cleanupSocket();
+        Log.i(TAG, "Connection thread stopped.");
+    }
+
+    private void cleanupSocket() {
+        try {
+            if (input != null) {
+                input.close();
+                input = null;
+                Log.d(TAG, "BufferedReader closed.");
+            }
+            if (socket != null && !socket.isClosed()) {
+                socket.close();
+                socket = null;
+                Log.i(TAG, "Socket closed.");
+            } else {
+                Log.d(TAG, "Socket already null or closed.");
+            }
+        } catch (IOException e) {
+            Log.e(TAG, "Error closing socket/input: ", e);
+        }
+    }
+
+    // Hàm cập nhật trạng thái nội bộ và gửi broadcast
+    private void updateStatusAndBroadcast(String status) {
+        currentStatus = status; // Cập nhật trạng thái nội bộ
+        sendStatusUpdate(status); // Gửi broadcast
+    }
+
+
+    // Gửi broadcast cập nhật trạng thái
+    private void sendStatusUpdate(String status) {
+        Log.d(TAG, "Sending status update broadcast: " + status);
+        Intent intent = new Intent(ACTION_UPDATE_STATUS);
+        intent.putExtra(EXTRA_STATUS, status);
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+    }
+
+    // Gửi broadcast tin nhắn mới (đã được gọi từ Main thread)
+    private void sendNewMessage(String message) {
+        Log.d(TAG, "Sending new message broadcast: " + message);
+        Intent intent = new Intent(ACTION_NEW_MESSAGE);
+        intent.putExtra(EXTRA_MESSAGE, message);
+        LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
+    }
+
+
+    // Tạo Notification Channel
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            CharSequence name = getString(R.string.notification_channel_name);
+            String description = getString(R.string.notification_channel_description);
+            int importance = NotificationManager.IMPORTANCE_HIGH;
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, name, importance);
+            channel.setDescription(description);
+            NotificationManager notificationManager = getSystemService(NotificationManager.class);
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+                Log.i(TAG, "Notification channel created.");
+            } else {
+                Log.e(TAG, "Failed to get NotificationManager for channel creation.");
+            }
+        }
+    }
+
+    // Tạo notification cho foreground service
+    private Notification createForegroundNotification() {
+        Log.d(TAG, "Creating foreground notification.");
+        Intent notificationIntent = new Intent(this, MainActivity.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, 0, notificationIntent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle(getString(R.string.service_notification_title))
+                .setContentText(getString(R.string.service_notification_text))
+                .setSmallIcon(R.drawable.ic_launcher_foreground) // Nên thay bằng icon phù hợp
+                .setContentIntent(pendingIntent)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_MIN)
+                .build();
+    }
+
+    // Hiển thị notification cho tin nhắn mới (đã được gọi từ Main thread)
+    private void showNotification(String title, String message) {
+        Log.d(TAG, "Attempting to show notification for message: " + message);
+        NotificationManager notificationManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (notificationManager == null) {
+            Log.e(TAG, "Notification Manager not found! Cannot show notification.");
+            return;
+        }
+
+        // Kiểm tra quyền POST_NOTIFICATIONS
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                Log.e(TAG, "POST_NOTIFICATIONS permission not granted. Cannot show notification.");
+                // Có thể gửi broadcast về Activity để thông báo lỗi này
+                return;
+            }
+        }
+
+        Intent intent = new Intent(this, MainActivity.class);
+        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
+        PendingIntent pendingIntent = PendingIntent.getActivity(this, MESSAGE_NOTIFICATION_ID, intent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_launcher_foreground) // Nên thay bằng icon phù hợp
+                .setContentTitle(title)
+                .setContentText(message)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setContentIntent(pendingIntent)
+                .setAutoCancel(true)
+                .setDefaults(NotificationCompat.DEFAULT_ALL);
+
+        try {
+            notificationManager.notify(MESSAGE_NOTIFICATION_ID, builder.build());
+            Log.i(TAG, "Notification shown successfully for message: " + message);
+        } catch (Exception e) {
+            Log.e(TAG, "Error showing notification: ", e);
+        }
+    }
+}

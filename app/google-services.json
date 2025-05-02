@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "808406287824",
+    "project_id": "nhandientienghetapp",
+    "storage_bucket": "nhandientienghetapp.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:808406287824:android:f3bdbacf8ba6eb1c75a5d5",
+        "android_client_info": {
+          "package_name": "com.example.nhandientienghet"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyChWYPt3NMAL-aSSB-0Tw3OsrJsxuBDY0k"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
