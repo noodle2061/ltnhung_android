@@ -1,4 +1,4 @@
-package com.example.nhandientienghet; // Đảm bảo package name này đúng với dự án của bạn
+package com.example.nhandientienghet;
 
 import android.Manifest;
 import android.content.BroadcastReceiver;
@@ -11,18 +11,21 @@ import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler; // Import Handler
+import android.os.Looper; // Import Looper
 import android.os.PowerManager;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageButton; // Import ImageButton
+import android.widget.ProgressBar; // Import ProgressBar
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.activity.EdgeToEdge;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
-import androidx.annotation.NonNull;
 import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
@@ -31,48 +34,52 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
-import com.google.android.gms.tasks.OnCompleteListener;
-import com.google.android.gms.tasks.Task;
-import com.google.firebase.messaging.FirebaseMessaging;
+// Bỏ import không cần thiết
+// import com.google.android.gms.tasks.OnCompleteListener;
+// import com.google.android.gms.tasks.Task;
+// import com.google.firebase.messaging.FirebaseMessaging;
 
 import java.io.IOException;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPreparedListener, MediaPlayer.OnErrorListener, MediaPlayer.OnCompletionListener {
 
     private static final String TAG = "MainActivity";
-    // Static variable to check if the activity is currently visible to the user
-    // Used by MyFirebaseMessagingService to decide how to handle incoming messages
     public static boolean isActivityVisible;
 
-    // --- UI Components ---
-    private TextView tvCurrentToken;
-    private Button btnPlayAudio;
-    private TextView tvAudioStatus;
+    // --- UI Components (Updated) ---
+    private TextView tvGreeting;
+    private TextView tvDeviceStatusLabel;
+    private TextView tvDeviceStatus;
+    private TextView tvLastNoiseTimeLabel;
+    private TextView tvLastNoiseTime;
+    private ImageButton btnMainPlayPause;
+    private ProgressBar progressBarMainAudio;
     private Button btnViewChart;
-    private Button btnViewHistory; // Button to open the history activity
+    private Button btnViewHistory;
 
     // --- Broadcast Receivers and Filters ---
-    // Receiver for handling PLAY_AUDIO_NOW action from MyFirebaseMessagingService
-    private BroadcastReceiver playAudioReceiver;
-    // Receiver for handling token updates from MyFirebaseMessagingService
-    private BroadcastReceiver tokenReceiver;
+    private BroadcastReceiver playAudioReceiver; // Receiver for handling PLAY_AUDIO_NOW
     private IntentFilter playAudioFilter;
-    private IntentFilter tokenFilter;
+    // Token receiver is removed
 
-    // --- MediaPlayer Components ---
-    private MediaPlayer mediaPlayer; // For playing audio within the activity
-    private String currentAudioUrl = null; // URL of the audio to be played
-    private boolean isAudioPrepared = false; // Flag to check if MediaPlayer is prepared
+    // --- MediaPlayer Components for Last Audio ---
+    private MediaPlayer lastAudioMediaPlayer; // Player for the audio in the CardView
+    private String lastReceivedAudioUrl = null; // URL of the latest audio alert
+    private boolean isLastAudioPlaying = false;
+    private boolean isLastAudioPrepared = false;
+    private Handler lastAudioProgressHandler; // Handler for the CardView's progress bar
+    private Runnable lastAudioProgressRunnable; // Runnable for the handler
 
-    // ActivityResultLauncher for requesting POST_NOTIFICATIONS permission on Android 13+
+    // ActivityResultLauncher for requesting POST_NOTIFICATIONS permission
     private final ActivityResultLauncher<String> requestPermissionLauncher =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), isGranted -> {
                 if (isGranted) {
                     Log.i(TAG, "POST_NOTIFICATIONS permission granted.");
-                    // Permission granted, fetch the current FCM token
-                    fetchCurrentToken();
+                    // You might want to trigger something here if needed after permission grant
                 } else {
-                    // Permission denied, show a dialog explaining why it's needed
                     Log.w(TAG, "POST_NOTIFICATIONS permission denied.");
                     showPermissionDeniedDialog();
                 }
@@ -83,18 +90,21 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Log.d(TAG, "onCreate");
-        // Enable edge-to-edge display
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
 
-        // --- Initialize UI Views ---
-        tvCurrentToken = findViewById(R.id.tvCurrentToken);
-        btnPlayAudio = findViewById(R.id.btnPlayAudio);
-        tvAudioStatus = findViewById(R.id.tvAudioStatus);
+        // --- Initialize UI Views (Updated) ---
+        tvGreeting = findViewById(R.id.tvGreeting);
+        tvDeviceStatusLabel = findViewById(R.id.tvDeviceStatusLabel);
+        tvDeviceStatus = findViewById(R.id.tvDeviceStatus);
+        tvLastNoiseTimeLabel = findViewById(R.id.tvLastNoiseTimeLabel);
+        tvLastNoiseTime = findViewById(R.id.tvLastNoiseTime);
+        btnMainPlayPause = findViewById(R.id.btnMainPlayPause);
+        progressBarMainAudio = findViewById(R.id.progressBarMainAudio);
         btnViewChart = findViewById(R.id.btnViewChart);
-        btnViewHistory = findViewById(R.id.btnViewHistory); // Find the history button
+        btnViewHistory = findViewById(R.id.btnViewHistory);
 
-        // --- Apply Window Insets for Edge-to-Edge ---
+        // --- Apply Window Insets ---
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
             v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
@@ -102,17 +112,12 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         });
 
         // --- Setup Button Click Listeners ---
-        // Listener for the Play/Pause Audio button
-        btnPlayAudio.setOnClickListener(v -> togglePlayPauseAudio());
-
-        // Listener for the View Chart button
+        btnMainPlayPause.setOnClickListener(v -> togglePlayPauseLastAudio()); // Listener for the new play/pause button
         btnViewChart.setOnClickListener(v -> {
             Log.d(TAG, "View Chart button clicked.");
             Intent chartIntent = new Intent(MainActivity.this, ChartActivity.class);
             startActivity(chartIntent);
         });
-
-        // Listener for the View History button
         btnViewHistory.setOnClickListener(v -> {
             Log.d(TAG, "View History button clicked.");
             Intent historyIntent = new Intent(MainActivity.this, HistoryActivity.class);
@@ -120,19 +125,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         });
 
         // --- Setup Broadcast Receivers ---
-        // Receiver for FCM token updates
-        tokenReceiver = new BroadcastReceiver() {
-            @Override
-            public void onReceive(Context context, Intent intent) {
-                String action = intent.getAction();
-                Log.d(TAG, "TokenReceiver onReceive triggered with action: " + action);
-                if (MyFirebaseMessagingService.ACTION_UPDATE_TOKEN.equals(action)) {
-                    String token = intent.getStringExtra(MyFirebaseMessagingService.EXTRA_FCM_TOKEN);
-                    tvCurrentToken.setText(token != null ? token : getString(R.string.token_not_available));
-                }
-            }
-        };
-        tokenFilter = new IntentFilter(MyFirebaseMessagingService.ACTION_UPDATE_TOKEN);
+        // Token receiver is removed
 
         // Receiver for immediate audio playback requests (when app is in foreground)
         playAudioReceiver = new BroadcastReceiver() {
@@ -144,12 +137,20 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
                     String urlToPlay = intent.getStringExtra(MyFirebaseMessagingService.EXTRA_AUDIO_URL);
                     if (urlToPlay != null && !urlToPlay.isEmpty()) {
                         Log.i(TAG, "Received PLAY_AUDIO_NOW broadcast for URL: " + urlToPlay);
-                        // Stop background service if it's running to avoid double playback
+
+                        // Stop background service if it's running
                         stopBackgroundPlaybackService();
-                        // Update the URL and start playback in this activity
-                        currentAudioUrl = urlToPlay;
-                        btnPlayAudio.setEnabled(true); // Ensure button is enabled
-                        initializeAndPlayAudio(currentAudioUrl);
+                        // Reset any currently playing audio in the main card
+                        resetLastAudioPlaybackState();
+
+                        // Store the new URL and update UI
+                        lastReceivedAudioUrl = urlToPlay;
+                        updateLastNoiseTime(); // Update the timestamp display
+                        updateAudioControlsVisibility(true); // Make controls visible
+
+                        // Don't auto-play, let the user click the button
+                        // initializeAndPlayLastAudio(lastReceivedAudioUrl);
+
                     } else {
                         Log.w(TAG, "Received PLAY_AUDIO_NOW broadcast without URL.");
                     }
@@ -158,13 +159,39 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         };
         playAudioFilter = new IntentFilter(MyFirebaseMessagingService.ACTION_PLAY_AUDIO_NOW);
 
+        // --- Initialize Handler for Last Audio Progress ---
+        lastAudioProgressHandler = new Handler(Looper.getMainLooper());
+        lastAudioProgressRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (lastAudioMediaPlayer != null && isLastAudioPlaying && isLastAudioPrepared) {
+                    try {
+                        int currentPosition = lastAudioMediaPlayer.getCurrentPosition();
+                        int duration = lastAudioMediaPlayer.getDuration();
+                        if (duration > 0) {
+                            int progress = (int) (((float) currentPosition / duration) * 100);
+                            progressBarMainAudio.setProgress(progress);
+                        }
+                        // Schedule next update
+                        lastAudioProgressHandler.postDelayed(this, 500);
+                    } catch (IllegalStateException e) {
+                        Log.e(TAG, "IllegalStateException while getting MediaPlayer position/duration for last audio", e);
+                        stopLastAudioProgressUpdater();
+                    }
+                } else {
+                    stopLastAudioProgressUpdater();
+                }
+            }
+        };
+
+
         // --- Initial Setup ---
-        // Request notification permission (required for Android 13+)
         askNotificationPermission();
-        // Fetch the current FCM token
-        fetchCurrentToken();
-        // Handle any intent that might have started this activity (e.g., from a notification click)
-        handleIntent(getIntent());
+        // Fetching token is removed
+        handleIntent(getIntent()); // Handle initial intent
+        updateAudioControlsVisibility(lastReceivedAudioUrl != null); // Set initial visibility
+        // TODO: Add logic to fetch initial device status
+        updateDeviceStatus("Chưa xác định"); // Placeholder
     }
 
     // Called when the activity is already running and receives a new intent
@@ -176,76 +203,60 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         handleIntent(intent); // Process the new intent
     }
 
-    // Processes the intent to extract the audio URL and update the UI accordingly
+    // Processes the intent to extract the audio URL for the main card
     private void handleIntent(Intent intent) {
         Log.d(TAG, "Handling intent: " + intent);
-        // Check if the intent contains an audio URL extra
         if (intent != null && intent.hasExtra(MyFirebaseMessagingService.EXTRA_AUDIO_URL)) {
             String receivedUrl = intent.getStringExtra(MyFirebaseMessagingService.EXTRA_AUDIO_URL);
-            Log.i(TAG, "Received Audio URL from Intent: " + receivedUrl);
+            Log.i(TAG, "Received Audio URL from Intent for main card: " + receivedUrl);
 
-            // Only update and reset player if the URL is new or was previously null
-            if (receivedUrl != null && !receivedUrl.equals(currentAudioUrl)) {
-                currentAudioUrl = receivedUrl;
+            if (receivedUrl != null && !receivedUrl.equals(lastReceivedAudioUrl)) {
                 // Stop the background service if user opened the app via notification
                 stopBackgroundPlaybackService();
-                // Enable play button and reset player state
-                btnPlayAudio.setEnabled(true);
-                tvAudioStatus.setText(R.string.audio_status_idle);
-                releaseMediaPlayer(); // Stop and release the previous player instance
-                isAudioPrepared = false;
-                btnPlayAudio.setText(R.string.play_audio);
-            } else if (currentAudioUrl == null && receivedUrl != null) {
+                // Reset playback if a different audio was playing in the card
+                resetLastAudioPlaybackState();
+                // Store the new URL
+                lastReceivedAudioUrl = receivedUrl;
+                updateLastNoiseTime(); // Update timestamp display
+                updateAudioControlsVisibility(true); // Show controls
+            } else if (lastReceivedAudioUrl == null && receivedUrl != null) {
                 // Case where there was no URL before
-                currentAudioUrl = receivedUrl;
                 stopBackgroundPlaybackService();
-                btnPlayAudio.setEnabled(true);
-                tvAudioStatus.setText(R.string.audio_status_idle);
-                releaseMediaPlayer();
-                isAudioPrepared = false;
-                btnPlayAudio.setText(R.string.play_audio);
+                lastReceivedAudioUrl = receivedUrl;
+                updateLastNoiseTime();
+                updateAudioControlsVisibility(true);
             } else {
-                // URL is the same, no reset needed, but ensure button state is correct
-                Log.d(TAG, "Received URL is the same as current URL or null, no UI reset needed.");
-                btnPlayAudio.setEnabled(currentAudioUrl != null && !currentAudioUrl.isEmpty());
-                // Still stop the background service if the app was brought to front
+                // URL is the same or null, no reset needed, but stop background service
+                Log.d(TAG, "Received URL is the same as current last URL or null.");
                 stopBackgroundPlaybackService();
+                // Ensure controls visibility is correct based on existing URL
+                updateAudioControlsVisibility(lastReceivedAudioUrl != null);
             }
-
         } else {
-            // Intent does not contain the audio URL extra
-            Log.d(TAG, "Intent does not contain EXTRA_AUDIO_URL.");
-            // Disable play button if no URL is available
-            if (currentAudioUrl == null) {
-                btnPlayAudio.setEnabled(false);
-                tvAudioStatus.setText(R.string.no_audio_url);
-            } else {
-                // Keep button enabled if a previous URL exists
-                btnPlayAudio.setEnabled(true);
-            }
+            Log.d(TAG, "Intent does not contain EXTRA_AUDIO_URL for main card.");
+            // Ensure controls are hidden if no URL is available
+            updateAudioControlsVisibility(lastReceivedAudioUrl != null);
         }
     }
-
 
     @Override
     protected void onStart() {
         super.onStart();
         Log.d(TAG, "onStart - Registering receivers");
-        isActivityVisible = true; // Mark activity as visible
-        // Register local broadcast receivers
-        LocalBroadcastManager.getInstance(this).registerReceiver(tokenReceiver, tokenFilter);
+        isActivityVisible = true;
+        // Register local broadcast receiver
         LocalBroadcastManager.getInstance(this).registerReceiver(playAudioReceiver, playAudioFilter);
-        // Stop the background playback service if it's running when the activity becomes visible
+        // Stop the background playback service if it's running
         stopBackgroundPlaybackService();
+        // TODO: Add logic to re-check device status if needed
     }
 
     @Override
     protected void onStop() {
         super.onStop();
         Log.d(TAG, "onStop - Unregistering receivers");
-        isActivityVisible = false; // Mark activity as not visible
-        // Unregister local broadcast receivers to prevent memory leaks
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(tokenReceiver);
+        isActivityVisible = false;
+        // Unregister local broadcast receiver
         LocalBroadcastManager.getInstance(this).unregisterReceiver(playAudioReceiver);
     }
 
@@ -253,16 +264,17 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
     protected void onPause() {
         super.onPause();
         Log.d(TAG, "onPause");
-        isActivityVisible = false; // Consider activity not visible when paused
-        // Pause audio playback if the activity is paused
-        if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+        isActivityVisible = false;
+        // Pause audio playback if the main card audio is playing
+        if (lastAudioMediaPlayer != null && isLastAudioPlaying) {
             try {
-                mediaPlayer.pause();
-                updateAudioStatus(getString(R.string.audio_status_paused));
-                btnPlayAudio.setText(R.string.play_audio);
-                Log.i(TAG, "Audio (Activity) paused due to Activity pause.");
+                lastAudioMediaPlayer.pause();
+                isLastAudioPlaying = false;
+                stopLastAudioProgressUpdater();
+                btnMainPlayPause.setImageResource(android.R.drawable.ic_media_play);
+                Log.i(TAG, "Last audio paused due to Activity pause.");
             } catch (IllegalStateException e) {
-                Log.e(TAG, "Error pausing MediaPlayer onPause", e);
+                Log.e(TAG, "Error pausing lastAudioMediaPlayer onPause", e);
             }
         }
     }
@@ -271,61 +283,51 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
     protected void onResume() {
         super.onResume();
         Log.d(TAG, "onResume");
-        isActivityVisible = true; // Mark activity as visible again
-        // Stop background service if it was running while the app was paused/stopped
+        isActivityVisible = true;
+        // Stop background service if it was running
         stopBackgroundPlaybackService();
+        // Don't auto-resume audio, user needs to press play again
     }
-
 
     @Override
     protected void onDestroy() {
         super.onDestroy();
         Log.d(TAG, "onDestroy");
-        isActivityVisible = false; // Ensure flag is false when destroyed
-        releaseMediaPlayer(); // Release MediaPlayer resources
+        isActivityVisible = false;
+        stopLastAudioProgressUpdater(); // Stop handler
+        releaseLastAudioMediaPlayer(); // Release MediaPlayer resources
     }
 
-
-    // --- Permission Handling ---
-
-    // Asks for POST_NOTIFICATIONS permission on Android 13+
+    // --- Permission Handling (Keep as is) ---
     private void askNotificationPermission() {
-        // Only needed on Android 13 (API level 33) and above
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
                     PackageManager.PERMISSION_GRANTED) {
-                // Permission already granted
                 Log.i(TAG, "POST_NOTIFICATIONS permission already granted.");
             } else if (shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
-                // Explain to the user why the permission is needed
                 Log.w(TAG, "Showing rationale for POST_NOTIFICATIONS permission.");
                 new AlertDialog.Builder(this)
                         .setTitle(R.string.permission_needed_title)
                         .setMessage(R.string.permission_needed_message)
                         .setPositiveButton(android.R.string.ok, (dialog, which) ->
-                                // Request the permission again
                                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS))
                         .setNegativeButton(R.string.cancel, (dialog, which) ->
                                 Log.w(TAG,"User cancelled permission rationale dialog."))
                         .show();
             } else {
-                // Directly request the permission
                 Log.i(TAG, "Requesting POST_NOTIFICATIONS permission...");
                 requestPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS);
             }
         } else {
-            // Permission not needed for older Android versions
             Log.i(TAG, "POST_NOTIFICATIONS permission not required on this Android version.");
         }
     }
 
-    // Shows a dialog guiding the user to app settings if permission was denied
     private void showPermissionDeniedDialog() {
         new AlertDialog.Builder(this)
                 .setTitle(R.string.permission_needed_title)
                 .setMessage(R.string.permission_needed_message)
                 .setPositiveButton(R.string.settings, (dialog, which) -> {
-                    // Open app settings
                     Intent intent = new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS);
                     Uri uri = Uri.fromParts("package", getPackageName(), null);
                     intent.setData(uri);
@@ -335,200 +337,195 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
                 .show();
     }
 
-    // --- FCM Token Handling ---
+    // --- FCM Token Handling (Removed) ---
+    // fetchCurrentToken() method is removed
 
-    // Fetches the current FCM registration token and updates the UI
-    private void fetchCurrentToken() {
-        FirebaseMessaging.getInstance().getToken()
-                .addOnCompleteListener(task -> {
-                    if (!task.isSuccessful()) {
-                        Log.w(TAG, "Fetching FCM registration token failed", task.getException());
-                        tvCurrentToken.setText(R.string.token_not_available);
-                        return;
-                    }
-                    // Get new FCM registration token
-                    String token = task.getResult();
-                    Log.d(TAG, "Current FCM Token: " + token);
-                    // Display the token (or placeholder if null)
-                    tvCurrentToken.setText(token != null ? token : getString(R.string.token_not_available));
-                    // Note: Sending the token to the server is handled by MyFirebaseMessagingService.onNewToken
-                });
-    }
+    // --- Main Card Audio Player Handling ---
 
-    // --- Activity MediaPlayer Handling ---
-
-    // Toggles between playing and pausing the audio associated with currentAudioUrl
-    private void togglePlayPauseAudio() {
-        // Check if a valid audio URL is available
-        if (currentAudioUrl == null || currentAudioUrl.isEmpty()) {
+    private void togglePlayPauseLastAudio() {
+        if (lastReceivedAudioUrl == null || lastReceivedAudioUrl.isEmpty()) {
             Toast.makeText(this, R.string.no_audio_url, Toast.LENGTH_SHORT).show();
-            Log.w(TAG, "No audio URL available to play.");
-            updateAudioStatus(getString(R.string.no_audio_url));
-            btnPlayAudio.setEnabled(false);
+            Log.w(TAG, "No last audio URL available to play.");
+            updateAudioControlsVisibility(false);
             return;
         }
 
-        // Ensure the background playback service is stopped before using the activity's player
+        // Ensure the background playback service is stopped
         stopBackgroundPlaybackService();
 
-        if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+        if (lastAudioMediaPlayer != null && isLastAudioPlaying) {
             // If playing, pause it
             try {
-                mediaPlayer.pause();
-                updateAudioStatus(getString(R.string.audio_status_paused));
-                btnPlayAudio.setText(R.string.play_audio);
-                Log.i(TAG, "Audio (Activity) paused.");
+                lastAudioMediaPlayer.pause();
+                isLastAudioPlaying = false;
+                stopLastAudioProgressUpdater();
+                btnMainPlayPause.setImageResource(android.R.drawable.ic_media_play);
+                Log.i(TAG, "Last audio paused.");
             } catch (IllegalStateException e) {
-                Log.e(TAG, "Error pausing MediaPlayer", e);
-                handleMediaPlayerError("Lỗi khi tạm dừng");
+                Log.e(TAG, "Error pausing lastAudioMediaPlayer", e);
+                handleLastAudioError("Lỗi khi tạm dừng");
             }
-        } else if (mediaPlayer != null && isAudioPrepared) {
+        } else if (lastAudioMediaPlayer != null && isLastAudioPrepared) {
             // If prepared but paused, resume playback
             try {
-                mediaPlayer.start();
-                updateAudioStatus(getString(R.string.audio_status_playing));
-                btnPlayAudio.setText(R.string.pause_audio);
-                Log.i(TAG, "Audio (Activity) resumed.");
+                lastAudioMediaPlayer.start();
+                isLastAudioPlaying = true;
+                startLastAudioProgressUpdater();
+                btnMainPlayPause.setImageResource(android.R.drawable.ic_media_pause);
+                Log.i(TAG, "Last audio resumed.");
             } catch (IllegalStateException e) {
-                Log.e(TAG, "Error resuming MediaPlayer", e);
-                handleMediaPlayerError("Lỗi khi tiếp tục phát");
+                Log.e(TAG, "Error resuming lastAudioMediaPlayer", e);
+                handleLastAudioError("Lỗi khi tiếp tục phát");
             }
         } else {
             // If not prepared or null, initialize and start playback
-            initializeAndPlayAudio(currentAudioUrl);
+            initializeAndPlayLastAudio(lastReceivedAudioUrl);
         }
     }
 
-    // Initializes the MediaPlayer instance for the given URL and starts preparation
-    private void initializeAndPlayAudio(String url) {
-        releaseMediaPlayer(); // Release any existing player instance first
-        Log.i(TAG, "Initializing MediaPlayer (Activity) for URL: " + url);
-        updateAudioStatus(getString(R.string.audio_status_preparing));
-        btnPlayAudio.setEnabled(false); // Disable button while preparing
-        btnPlayAudio.setText(R.string.play_audio); // Reset button text
+    private void initializeAndPlayLastAudio(String url) {
+        resetLastAudioPlaybackState(); // Release any existing player instance first
+        Log.i(TAG, "Initializing lastAudioMediaPlayer for URL: " + url);
+        updateAudioControlsVisibility(true); // Ensure controls are visible
+        progressBarMainAudio.setProgress(0); // Reset progress
+        btnMainPlayPause.setEnabled(false); // Disable button while preparing
+        btnMainPlayPause.setImageResource(android.R.drawable.ic_media_play); // Show play icon
 
-        mediaPlayer = new MediaPlayer();
-        // Set audio attributes for music playback
-        mediaPlayer.setAudioAttributes(
+        Toast.makeText(this, R.string.audio_preparing, Toast.LENGTH_SHORT).show();
+
+        lastAudioMediaPlayer = new MediaPlayer();
+        lastAudioMediaPlayer.setAudioAttributes(
                 new AudioAttributes.Builder()
                         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                         .setUsage(AudioAttributes.USAGE_MEDIA)
                         .build()
         );
-        // Request a partial wake lock to keep CPU running during playback (requires WAKE_LOCK permission)
         try {
-            mediaPlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
+            lastAudioMediaPlayer.setWakeMode(getApplicationContext(), PowerManager.PARTIAL_WAKE_LOCK);
         } catch (SecurityException e) {
-            Log.w(TAG, "Missing WAKE_LOCK permission for MediaPlayer", e);
-            // Playback might stop if device sleeps deeply
+            Log.w(TAG, "Missing WAKE_LOCK permission for lastAudioMediaPlayer", e);
         }
 
         try {
-            // Set the data source (URL)
-            mediaPlayer.setDataSource(url);
-            // Set listeners for various MediaPlayer events
-            mediaPlayer.setOnPreparedListener(this);
-            mediaPlayer.setOnErrorListener(this);
-            mediaPlayer.setOnCompletionListener(this);
-            // Start asynchronous preparation
-            mediaPlayer.prepareAsync();
-            Log.i(TAG, "MediaPlayer (Activity) preparing...");
+            lastAudioMediaPlayer.setDataSource(url);
+            // Use the activity itself as the listener
+            lastAudioMediaPlayer.setOnPreparedListener(this);
+            lastAudioMediaPlayer.setOnErrorListener(this);
+            lastAudioMediaPlayer.setOnCompletionListener(this);
+            lastAudioMediaPlayer.prepareAsync();
+            Log.i(TAG, "lastAudioMediaPlayer preparing...");
         } catch (IOException | IllegalArgumentException | SecurityException | IllegalStateException e) {
-            // Handle errors during initialization
-            Log.e(TAG, "Error initializing MediaPlayer (Activity)", e);
-            handleMediaPlayerError(String.format(getString(R.string.error_playing_audio), e.getMessage()));
+            Log.e(TAG, "Error initializing lastAudioMediaPlayer", e);
+            handleLastAudioError(String.format(getString(R.string.error_playing_audio), e.getMessage()));
         }
     }
 
-    // Called when MediaPlayer is prepared and ready to play
+    // --- MediaPlayer Listener Callbacks (for lastAudioMediaPlayer) ---
+
     @Override
     public void onPrepared(MediaPlayer mp) {
-        Log.i(TAG, "MediaPlayer (Activity) prepared.");
-        isAudioPrepared = true;
-        btnPlayAudio.setEnabled(true); // Enable the play button
-        try {
-            // Start playback
-            mp.start();
-            updateAudioStatus(getString(R.string.audio_status_playing));
-            btnPlayAudio.setText(R.string.pause_audio); // Update button text
-            Log.i(TAG, "Audio (Activity) playback started.");
-        } catch (IllegalStateException e) {
-            // Handle error if start() is called in an invalid state
-            Log.e(TAG, "IllegalStateException on MediaPlayer.start() (Activity)", e);
-            handleMediaPlayerError(String.format(getString(R.string.error_playing_audio), "Lỗi khi bắt đầu phát"));
+        // Check if this callback is for the lastAudioMediaPlayer
+        if (mp == lastAudioMediaPlayer) {
+            Log.i(TAG, "lastAudioMediaPlayer prepared.");
+            isLastAudioPrepared = true;
+            btnMainPlayPause.setEnabled(true); // Enable the play/pause button
+            try {
+                mp.start();
+                isLastAudioPlaying = true;
+                startLastAudioProgressUpdater(); // Start progress updates
+                btnMainPlayPause.setImageResource(android.R.drawable.ic_media_pause); // Update button icon
+                Log.i(TAG, "Last audio playback started.");
+            } catch (IllegalStateException e) {
+                Log.e(TAG, "IllegalStateException on lastAudioMediaPlayer.start()", e);
+                handleLastAudioError(String.format(getString(R.string.error_playing_audio), "Lỗi khi bắt đầu phát"));
+            }
+        } else {
+            Log.w(TAG, "onPrepared called for an unknown MediaPlayer instance.");
         }
     }
 
-    // Called when an error occurs during playback
     @Override
     public boolean onError(MediaPlayer mp, int what, int extra) {
-        // Log the error details
-        Log.e(TAG, "MediaPlayer (Activity) Error: what=" + what + ", extra=" + extra);
-        String errorMsg = getMediaPlayerErrorString(what, extra); // Get a user-friendly error string
-        // Handle the error (update UI, release player)
-        handleMediaPlayerError(String.format(getString(R.string.error_playing_audio), errorMsg));
-        return true; // Indicate that the error has been handled
+        // Check if this callback is for the lastAudioMediaPlayer
+        if (mp == lastAudioMediaPlayer) {
+            Log.e(TAG, "lastAudioMediaPlayer Error: what=" + what + ", extra=" + extra);
+            String errorMsg = getMediaPlayerErrorString(what, extra);
+            handleLastAudioError(String.format(getString(R.string.error_playing_audio), errorMsg));
+            return true; // Indicate error handled
+        } else {
+            Log.w(TAG, "onError called for an unknown MediaPlayer instance.");
+            return false; // Indicate error not handled
+        }
     }
 
-    // Called when playback reaches the end of the media
     @Override
     public void onCompletion(MediaPlayer mp) {
-        Log.i(TAG, "MediaPlayer (Activity) playback completed.");
-        updateAudioStatus(getString(R.string.audio_status_completed));
-        releaseMediaPlayer(); // Release the player resources
-        btnPlayAudio.setText(R.string.play_audio); // Reset button text
-        isAudioPrepared = false;
-        // Re-enable button only if a valid URL is still present
-        btnPlayAudio.setEnabled(currentAudioUrl != null && !currentAudioUrl.isEmpty());
+        // Check if this callback is for the lastAudioMediaPlayer
+        if (mp == lastAudioMediaPlayer) {
+            Log.i(TAG, "lastAudioMediaPlayer playback completed.");
+            resetLastAudioPlaybackState(); // Reset state on completion
+            Toast.makeText(this, R.string.audio_completed, Toast.LENGTH_SHORT).show();
+        } else {
+            Log.w(TAG, "onCompletion called for an unknown MediaPlayer instance.");
+        }
     }
 
-    // Releases the MediaPlayer resources safely
-    private void releaseMediaPlayer() {
-        if (mediaPlayer != null) {
-            Log.d(TAG, "Releasing MediaPlayer (Activity).");
+    // --- Helper Methods for Last Audio Player ---
+
+    private void releaseLastAudioMediaPlayer() {
+        if (lastAudioMediaPlayer != null) {
+            Log.d(TAG, "Releasing lastAudioMediaPlayer.");
             try {
-                // Check states before calling methods to avoid IllegalStateException
-                if (mediaPlayer.isPlaying()) {
-                    mediaPlayer.stop();
+                if (lastAudioMediaPlayer.isPlaying()) {
+                    lastAudioMediaPlayer.stop();
                 }
-                mediaPlayer.reset(); // Reset player to idle state
-                mediaPlayer.release(); // Release system resources
+                lastAudioMediaPlayer.reset();
+                lastAudioMediaPlayer.release();
             } catch (IllegalStateException e) {
-                Log.e(TAG, "IllegalStateException during MediaPlayer release (Activity)", e);
+                Log.e(TAG, "IllegalStateException during lastAudioMediaPlayer release", e);
             } finally {
-                mediaPlayer = null; // Set to null after release
-                isAudioPrepared = false;
-                Log.i(TAG, "MediaPlayer (Activity) released.");
+                lastAudioMediaPlayer = null;
+                isLastAudioPrepared = false;
+                isLastAudioPlaying = false;
+                Log.i(TAG, "lastAudioMediaPlayer released.");
             }
         }
     }
 
-    // Updates the audio status TextView on the UI thread
-    private void updateAudioStatus(String status) {
+    // Resets the state related to the main card's audio playback
+    private void resetLastAudioPlaybackState() {
+        Log.d(TAG, "Resetting last audio playback state.");
+        releaseLastAudioMediaPlayer();
+        stopLastAudioProgressUpdater();
+        // Update UI on the main thread
         runOnUiThread(() -> {
-            if (tvAudioStatus != null) tvAudioStatus.setText(status);
-        });
-    }
-
-    // Centralized handler for MediaPlayer errors
-    private void handleMediaPlayerError(String logMessageForUser) {
-        Log.e(TAG, "MediaPlayer Error (Activity): " + logMessageForUser); // Log detailed error
-        updateAudioStatus(getString(R.string.audio_status_error)); // Update UI status
-        releaseMediaPlayer(); // Release the faulty player
-        // Update UI elements on the main thread
-        runOnUiThread(() -> {
-            if (btnPlayAudio != null) {
-                // Re-enable button only if a URL exists, reset text
-                btnPlayAudio.setEnabled(currentAudioUrl != null && !currentAudioUrl.isEmpty());
-                btnPlayAudio.setText(R.string.play_audio);
+            if (btnMainPlayPause != null) {
+                btnMainPlayPause.setImageResource(android.R.drawable.ic_media_play);
+                // Keep button enabled if URL exists, disable otherwise
+                btnMainPlayPause.setEnabled(lastReceivedAudioUrl != null && !lastReceivedAudioUrl.isEmpty());
             }
-            // Show a user-friendly error message
-            Toast.makeText(MainActivity.this, logMessageForUser, Toast.LENGTH_LONG).show();
+            if (progressBarMainAudio != null) {
+                progressBarMainAudio.setProgress(0);
+                // Keep visibility based on URL existence
+                progressBarMainAudio.setVisibility( (lastReceivedAudioUrl != null && !lastReceivedAudioUrl.isEmpty()) ? View.VISIBLE : View.INVISIBLE);
+            }
         });
-        isAudioPrepared = false;
     }
 
-    // Helper method to convert MediaPlayer error codes to strings
+
+    // Centralized handler for lastAudioMediaPlayer errors
+    private void handleLastAudioError(String logMessageForUser) {
+        Log.e(TAG, "lastAudioMediaPlayer Error: " + logMessageForUser);
+        resetLastAudioPlaybackState(); // Reset state on error
+        // Show a user-friendly error message
+        runOnUiThread(() -> {
+            Toast.makeText(MainActivity.this, logMessageForUser, Toast.LENGTH_LONG).show();
+            // Ensure controls are appropriately enabled/disabled after error
+            updateAudioControlsVisibility(lastReceivedAudioUrl != null);
+        });
+    }
+
+    // Helper method to convert MediaPlayer error codes to strings (Keep as is)
     private String getMediaPlayerErrorString(int what, int extra) {
         String whatError;
         switch (what) {
@@ -542,22 +539,75 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
             case MediaPlayer.MEDIA_ERROR_MALFORMED: extraError = "MEDIA_ERROR_MALFORMED"; break;
             case MediaPlayer.MEDIA_ERROR_UNSUPPORTED: extraError = "MEDIA_ERROR_UNSUPPORTED"; break;
             case MediaPlayer.MEDIA_ERROR_TIMED_OUT: extraError = "MEDIA_ERROR_TIMED_OUT"; break;
-            // <<< SỬA LỖI Ở ĐÂY: Dùng giá trị số nguyên thay vì hằng số >>>
             case -2147483648: extraError = "MEDIA_ERROR_SYSTEM (-2147483648)"; break;
-            // <<< KẾT THÚC SỬA LỖI >>>
             default: extraError = "Extra code: " + extra;
         }
         return whatError + " (" + extraError + ")";
     }
 
-    // --- Background Service Control ---
+    // --- Progress Updater Handling for Last Audio ---
+    private void startLastAudioProgressUpdater() {
+        stopLastAudioProgressUpdater(); // Stop previous one if any
+        lastAudioProgressHandler.post(lastAudioProgressRunnable);
+        Log.d(TAG, "Started last audio progress updater.");
+    }
 
-    // Sends an intent to stop the AudioPlaybackService
+    private void stopLastAudioProgressUpdater() {
+        lastAudioProgressHandler.removeCallbacks(lastAudioProgressRunnable);
+        Log.d(TAG, "Stopped last audio progress updater.");
+    }
+
+    // --- UI Update Helpers ---
+
+    // Updates the visibility of play/pause button and progress bar
+    private void updateAudioControlsVisibility(boolean show) {
+        runOnUiThread(() -> {
+            int visibility = show ? View.VISIBLE : View.INVISIBLE; // Use INVISIBLE to maintain layout space
+            if (btnMainPlayPause != null) {
+                btnMainPlayPause.setVisibility(visibility);
+                btnMainPlayPause.setEnabled(show); // Also enable/disable
+            }
+            if (progressBarMainAudio != null) {
+                progressBarMainAudio.setVisibility(visibility);
+                if (!show) {
+                    progressBarMainAudio.setProgress(0); // Reset progress when hiding
+                }
+            }
+        });
+    }
+
+    // Updates the last noise time display
+    private void updateLastNoiseTime() {
+        runOnUiThread(() -> {
+            if (tvLastNoiseTime != null) {
+                if (lastReceivedAudioUrl != null) {
+                    // Format the current time as the "last noise time"
+                    SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault());
+                    String formattedTime = sdf.format(new Date());
+                    tvLastNoiseTime.setText(formattedTime);
+                } else {
+                    tvLastNoiseTime.setText(R.string.last_noise_time_none);
+                }
+            }
+        });
+    }
+
+    // Updates the device status display (Placeholder)
+    private void updateDeviceStatus(String status) {
+        runOnUiThread(() -> {
+            if (tvDeviceStatus != null) {
+                tvDeviceStatus.setText(status);
+                // TODO: Change text color based on status (e.g., green for online, red for offline)
+            }
+        });
+    }
+
+
+    // --- Background Service Control (Keep as is) ---
     private void stopBackgroundPlaybackService() {
         Log.d(TAG, "Requesting to stop AudioPlaybackService.");
         Intent stopIntent = new Intent(this, AudioPlaybackService.class);
         stopIntent.setAction(AudioPlaybackService.ACTION_STOP);
-        // Use stopService() to request the service to stop
         stopService(stopIntent);
     }
     // ---------------------------------
