@@ -1,5 +1,6 @@
 <resources>
     <string name="app_name">FCM Audio App</string>
+
     <string name="permission_needed_title">Cần cấp quyền</string>
     <string name="permission_needed_message">Ứng dụng cần quyền Thông báo để hiển thị tin nhắn từ server. Vui lòng cấp quyền trong cài đặt.</string>
     <string name="settings">Cài đặt</string>
@@ -11,7 +12,6 @@
 
     <string name="fcm_token_label">FCM Token hiện tại:</string>
     <string name="token_not_available">Token chưa có sẵn</string>
-
     <string name="play_audio">Nghe Audio</string>
     <string name="pause_audio">Tạm dừng</string>
     <string name="audio_status_idle">Trạng thái: Chờ</string>
@@ -22,8 +22,8 @@
     <string name="audio_status_error">Trạng thái: Lỗi phát</string>
     <string name="no_audio_url">Không có URL audio để phát.</string>
     <string name="error_playing_audio">Lỗi khi phát audio: %1$s</string>
-
     <string name="view_realtime_chart_button">Xem biểu đồ âm thanh realtime</string>
+
     <string name="chart_activity_title">Biểu đồ âm thanh Realtime</string>
     <string name="back_button">Quay lại</string>
     <string name="chart_description">Biểu đồ biên độ âm thanh theo thời gian</string>
@@ -31,4 +31,22 @@
     <string name="chart_error_loading_data">Lỗi khi tải dữ liệu biểu đồ.</string>
     <string name="chart_no_data_source">Không tìm thấy nguồn dữ liệu (IP) trên Firebase.</string>
 
-</resources>
+    <string name="view_alert_history_button">Xem Lịch sử Cảnh báo</string>
+    <string name="alert_history_title">Lịch sử Cảnh báo</string>
+    <string name="history_loading">Đang tải lịch sử...</string>
+    <string name="history_empty">Không có lịch sử cảnh báo nào.</string>
+    <string name="history_error_network">Lỗi mạng khi tải lịch sử.</string>
+    <string name="history_error_server">Lỗi từ server khi tải lịch sử</string>
+    <string name="history_error_parsing">Lỗi xử lý dữ liệu lịch sử.</string>
+    <string name="audio_fetching_url">Đang lấy link audio...</string>
+    <string name="audio_error_url">Không thể lấy link audio</string>
+    <string name="audio_error_url_parsing">Lỗi xử lý link audio.</string>
+    <string name="audio_error_url_network">Lỗi mạng khi lấy link audio.</string>
+    <string name="audio_preparing">Đang chuẩn bị audio...</string>
+    <string name="audio_playing">Đang phát audio...</string>
+    <string name="audio_completed">Phát audio hoàn tất.</string>
+    <string name="audio_error_preparing">Lỗi chuẩn bị audio.</string>
+    <string name="audio_error_playback">Lỗi khi phát audio.</string>
+    <string name="audio_paused_history">Đã tạm dừng audio.</string>
+    <string name="play_button_label">Nghe</string>
+    <string name="no_audio_for_item">Không có audio cho mục này.</string> <string name="play_pause_button_desc">Nút Phát/Tạm dừng</string> </resources>

@@ -1,0 +1,317 @@
+package com.example.nhandientienghet;
+
+import android.media.AudioAttributes;
+import android.media.MediaPlayer;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.PowerManager;
+import android.util.Log;
+import android.view.View;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.activity.EdgeToEdge;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
+
+import com.android.volley.Request;
+import com.android.volley.RequestQueue;
+import com.android.volley.Response;
+import com.android.volley.VolleyError;
+import com.android.volley.toolbox.JsonObjectRequest;
+import com.android.volley.toolbox.StringRequest;
+import com.android.volley.toolbox.Volley;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+// Implement interface đã đổi tên
+public class HistoryActivity extends AppCompatActivity implements HistoryAdapter.OnItemClickListener {
+
+    private static final String TAG = "HistoryActivity";
+    // Thay thế bằng URL server Flask của bạn
+    private static final String SERVER_BASE_URL = "http://192.168.56.103:5000"; // <<< THAY THẾ IP/PORT CỦA BẠN
+    private static final String HISTORY_API_URL = SERVER_BASE_URL + "/alert_history";
+    private static final String GET_AUDIO_URL_API = SERVER_BASE_URL + "/get_audio_url";
+
+    private RecyclerView recyclerViewHistory;
+    private HistoryAdapter historyAdapter;
+    private List<HistoryItem> historyItemList;
+    private ProgressBar progressBarHistory;
+    private TextView tvHistoryStatus;
+    private RequestQueue requestQueue;
+
+    private MediaPlayer mediaPlayer;
+    private PowerManager.WakeLock wakeLock;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        EdgeToEdge.enable(this);
+        setContentView(R.layout.activity_history);
+
+        recyclerViewHistory = findViewById(R.id.recyclerViewHistory);
+        progressBarHistory = findViewById(R.id.progressBarHistory);
+        tvHistoryStatus = findViewById(R.id.tvHistoryStatus);
+
+        recyclerViewHistory.setLayoutManager(new LinearLayoutManager(this));
+        historyItemList = new ArrayList<>();
+        // Truyền 'this' vì Activity implement OnItemClickListener đã cập nhật
+        historyAdapter = new HistoryAdapter(this, historyItemList, this);
+        recyclerViewHistory.setAdapter(historyAdapter);
+
+        requestQueue = Volley.newRequestQueue(this);
+
+        PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
+        if (powerManager != null) {
+            wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "NhanDienTiengHet::HistoryAudioWakeLock");
+            wakeLock.setReferenceCounted(false);
+        }
+
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
+            return insets;
+        });
+
+        fetchHistoryData();
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (requestQueue != null) {
+            requestQueue.cancelAll(TAG);
+        }
+        releaseMediaPlayer();
+        releaseWakeLock();
+    }
+
+    @Override
+    protected void onPause() {
+        super.onPause();
+        if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+            try {
+                mediaPlayer.pause();
+                Toast.makeText(this, R.string.audio_paused_history, Toast.LENGTH_SHORT).show();
+            } catch (IllegalStateException e) {
+                Log.e(TAG, "Error pausing MediaPlayer onPause", e);
+            }
+        }
+    }
+
+    private void fetchHistoryData() {
+        Log.d(TAG, "Fetching history data from: " + HISTORY_API_URL);
+        progressBarHistory.setVisibility(View.VISIBLE);
+        tvHistoryStatus.setVisibility(View.GONE);
+        recyclerViewHistory.setVisibility(View.GONE);
+
+        JsonObjectRequest jsonObjectRequest = new JsonObjectRequest(
+                Request.Method.GET, HISTORY_API_URL, null,
+                response -> {
+                    Log.d(TAG, "History response received: " + response.toString());
+                    progressBarHistory.setVisibility(View.GONE);
+                    try {
+                        String status = response.getString("status");
+                        if ("success".equals(status)) {
+                            JSONArray historyArray = response.getJSONArray("history");
+                            if (historyArray.length() > 0) {
+                                historyItemList.clear();
+                                for (int i = 0; i < historyArray.length(); i++) {
+                                    JSONObject itemObject = historyArray.getJSONObject(i);
+                                    String id = itemObject.getString("id");
+                                    String timestamp = itemObject.getString("timestamp");
+                                    String clientIp = itemObject.getString("client_ip");
+                                    String s3Key = itemObject.optString("s3_key", null);
+                                    HistoryItem item = new HistoryItem(id, timestamp, clientIp, s3Key);
+                                    historyItemList.add(item);
+                                }
+                                historyAdapter.notifyDataSetChanged();
+                                recyclerViewHistory.setVisibility(View.VISIBLE);
+                            } else {
+                                tvHistoryStatus.setText(R.string.history_empty);
+                                tvHistoryStatus.setVisibility(View.VISIBLE);
+                                recyclerViewHistory.setVisibility(View.GONE);
+                            }
+                        } else {
+                            String message = response.optString("message", "Unknown server success error");
+                            Log.e(TAG, "Server returned success=false: " + message);
+                            showError(getString(R.string.history_error_server) + ": " + message);
+                        }
+                    } catch (JSONException e) {
+                        Log.e(TAG, "Error parsing history JSON response", e);
+                        showError(getString(R.string.history_error_parsing));
+                    }
+                },
+                error -> {
+                    Log.e(TAG, "Volley error fetching history: " + error.toString());
+                    progressBarHistory.setVisibility(View.GONE);
+                    showError(getString(R.string.history_error_network));
+                });
+
+        jsonObjectRequest.setTag(TAG);
+        requestQueue.add(jsonObjectRequest);
+    }
+
+    private void showError(String message) {
+        tvHistoryStatus.setText(message);
+        tvHistoryStatus.setVisibility(View.VISIBLE);
+        recyclerViewHistory.setVisibility(View.GONE);
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+    }
+
+    // --- Implement phương thức từ HistoryAdapter.OnItemClickListener (ĐÃ ĐỔI TÊN) ---
+
+    // Bỏ phương thức này nếu không cần xử lý click vào cả item
+    // @Override
+    // public void onItemClick(HistoryItem item) {
+    //     Log.d(TAG, "Item clicked: ID = " + item.getId() + ", IP = " + item.getClientIp());
+    // }
+
+    @Override
+    public void onPlayButtonClick(String s3Key) {
+        // Xử lý khi người dùng nhấn vào nút Play
+        Log.d(TAG, "Play button clicked for key: " + s3Key);
+        // Gọi API để lấy URL tạm thời và phát audio
+        fetchAndPlayAudio(s3Key);
+    }
+
+    // --- Các hàm xử lý phát audio từ S3 (fetchAndPlayAudio, playAudioFromUrl, releaseMediaPlayer, acquireWakeLock, releaseWakeLock) giữ nguyên ---
+    private void fetchAndPlayAudio(String s3Key) {
+        releaseMediaPlayer();
+        Toast.makeText(this, R.string.audio_fetching_url, Toast.LENGTH_SHORT).show();
+
+        String apiUrl = GET_AUDIO_URL_API + "?s3_key=" + Uri.encode(s3Key);
+        Log.d(TAG, "Fetching S3 URL from: " + apiUrl);
+
+        StringRequest stringRequest = new StringRequest(Request.Method.GET, apiUrl,
+                response -> {
+                    Log.d(TAG, "S3 URL response: " + response);
+                    try {
+                        JSONObject jsonResponse = new JSONObject(response);
+                        String status = jsonResponse.getString("status");
+                        if ("success".equals(status)) {
+                            String presignedUrl = jsonResponse.getString("url");
+                            Log.i(TAG, "Got pre-signed URL: " + presignedUrl);
+                            playAudioFromUrl(presignedUrl);
+                        } else {
+                            String message = jsonResponse.optString("message", "Failed to get URL");
+                            Log.e(TAG, "Server error getting S3 URL: " + message);
+                            Toast.makeText(HistoryActivity.this, getString(R.string.audio_error_url) + ": " + message, Toast.LENGTH_LONG).show();
+                        }
+                    } catch (JSONException e) {
+                        Log.e(TAG, "Error parsing S3 URL JSON response", e);
+                        Toast.makeText(HistoryActivity.this, R.string.audio_error_url_parsing, Toast.LENGTH_LONG).show();
+                    }
+                },
+                error -> {
+                    Log.e(TAG, "Volley error fetching S3 URL: " + error.toString());
+                    Toast.makeText(HistoryActivity.this, R.string.audio_error_url_network, Toast.LENGTH_LONG).show();
+                });
+
+        stringRequest.setTag(TAG);
+        requestQueue.add(stringRequest);
+    }
+
+    private void playAudioFromUrl(String url) {
+        releaseMediaPlayer();
+        acquireWakeLock();
+
+        Toast.makeText(this, R.string.audio_preparing, Toast.LENGTH_SHORT).show();
+        Log.i(TAG, "Initializing MediaPlayer for URL: " + url);
+
+        mediaPlayer = new MediaPlayer();
+        mediaPlayer.setAudioAttributes(
+                new AudioAttributes.Builder()
+                        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+                        .setUsage(AudioAttributes.USAGE_MEDIA)
+                        .build()
+        );
+
+        try {
+            mediaPlayer.setDataSource(url);
+            mediaPlayer.setOnPreparedListener(mp -> {
+                Log.i(TAG, "MediaPlayer prepared, starting playback.");
+                Toast.makeText(HistoryActivity.this, R.string.audio_playing, Toast.LENGTH_SHORT).show();
+                try {
+                    mp.start();
+                } catch (IllegalStateException e) {
+                    Log.e(TAG, "Error starting playback after prepare", e);
+                    Toast.makeText(HistoryActivity.this, R.string.audio_error_playback, Toast.LENGTH_LONG).show();
+                    releaseMediaPlayer();
+                    releaseWakeLock();
+                }
+            });
+            mediaPlayer.setOnCompletionListener(mp -> {
+                Log.i(TAG, "MediaPlayer playback completed.");
+                Toast.makeText(HistoryActivity.this, R.string.audio_completed, Toast.LENGTH_SHORT).show();
+                releaseMediaPlayer();
+                releaseWakeLock();
+            });
+            mediaPlayer.setOnErrorListener((mp, what, extra) -> {
+                Log.e(TAG, "MediaPlayer Error: what=" + what + ", extra=" + extra);
+                Toast.makeText(HistoryActivity.this, R.string.audio_error_playback, Toast.LENGTH_LONG).show();
+                releaseMediaPlayer();
+                releaseWakeLock();
+                return true;
+            });
+
+            mediaPlayer.prepareAsync();
+
+        } catch (IOException | IllegalArgumentException | SecurityException | IllegalStateException e) {
+            Log.e(TAG, "Error setting data source or preparing MediaPlayer", e);
+            Toast.makeText(this, R.string.audio_error_preparing, Toast.LENGTH_LONG).show();
+            releaseMediaPlayer();
+            releaseWakeLock();
+        }
+    }
+
+    private void releaseMediaPlayer() {
+        if (mediaPlayer != null) {
+            Log.d(TAG, "Releasing MediaPlayer.");
+            try {
+                if (mediaPlayer.isPlaying()) {
+                    mediaPlayer.stop();
+                }
+                mediaPlayer.reset();
+                mediaPlayer.release();
+            } catch (Exception e) {
+                Log.e(TAG, "Error releasing MediaPlayer", e);
+            } finally {
+                mediaPlayer = null;
+            }
+        }
+    }
+
+    private void acquireWakeLock() {
+        if (wakeLock != null && !wakeLock.isHeld()) {
+            try {
+                wakeLock.acquire(10*60*1000L /*10 minutes timeout*/);
+                Log.d(TAG, "WakeLock acquired for history audio.");
+            } catch (Exception e) {
+                Log.e(TAG, "Error acquiring WakeLock", e);
+            }
+        }
+    }
+
+    private void releaseWakeLock() {
+        if (wakeLock != null && wakeLock.isHeld()) {
+            try {
+                wakeLock.release();
+                Log.d(TAG, "WakeLock released for history audio.");
+            } catch (Exception e) {
+                Log.e(TAG, "Error releasing WakeLock", e);
+            }
+        }
+    }
+}
