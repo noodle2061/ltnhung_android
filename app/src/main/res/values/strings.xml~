@@ -1,6 +1,5 @@
 <resources>
-    <string name="app_name">FCM Audio App</string>
-    <string name="permission_needed_title">Cần cấp quyền</string>
+    <string name="app_name">FCM Audio App</string> <string name="permission_needed_title">Cần cấp quyền</string>
     <string name="permission_needed_message">Ứng dụng cần quyền Thông báo để hiển thị tin nhắn từ server. Vui lòng cấp quyền trong cài đặt.</string>
     <string name="settings">Cài đặt</string>
     <string name="cancel">Hủy</string>
@@ -22,13 +21,5 @@
     <string name="audio_status_error">Trạng thái: Lỗi phát</string>
     <string name="no_audio_url">Không có URL audio để phát.</string>
     <string name="error_playing_audio">Lỗi khi phát audio: %1$s</string>
-
-    <string name="view_realtime_chart_button">Xem biểu đồ âm thanh realtime</string>
-    <string name="chart_activity_title">Biểu đồ âm thanh Realtime</string>
-    <string name="back_button">Quay lại</string>
-    <string name="chart_description">Biểu đồ biên độ âm thanh theo thời gian</string>
-    <string name="chart_waiting_for_data">Đang chờ dữ liệu từ Firebase...</string>
-    <string name="chart_error_loading_data">Lỗi khi tải dữ liệu biểu đồ.</string>
-    <string name="chart_no_data_source">Không tìm thấy nguồn dữ liệu (IP) trên Firebase.</string>
 
 </resources>

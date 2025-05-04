@@ -52,46 +52,14 @@
         app:layout_constraintTop_toTopOf="@+id/btnPlayAudio"
         app:layout_constraintBottom_toBottomOf="@+id/btnPlayAudio"/>
 
-
-    <TextView
-        android:id="@+id/tvLogTitle"
-        android:layout_width="wrap_content"
+    <Button
+        android:id="@+id/btnViewChart"
+        android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
-        android:text="@string/fcm_log_title"
-        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
-        android:textStyle="bold"
+        android:text="@string/view_realtime_chart_button"
+        app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/btnPlayAudio" />
-
-    <Button
-        android:id="@+id/btnClearLog"
-        style="@style/Widget.MaterialComponents.Button.TextButton"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:text="@string/clear_log"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="@+id/tvLogTitle"
-        app:layout_constraintBottom_toBottomOf="@+id/tvLogTitle"/>
-
-    <ScrollView
-        android:id="@+id/scrollViewLog"
-        android:layout_width="0dp"
-        android:layout_height="0dp"
-        android:layout_marginTop="8dp"
-        android:background="@android:drawable/editbox_background_normal"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/tvLogTitle">
-
-        <TextView
-            android:id="@+id/tvLogDisplay"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:padding="8dp"
-            android:textAppearance="@style/TextAppearance.AppCompat.Small"
-            android:textIsSelectable="true" />
-    </ScrollView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

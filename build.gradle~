@@ -4,11 +4,8 @@
 // (Cách làm cũ hơn nhưng vẫn hoạt động nếu bạn chưa dùng alias trực tiếp)
 buildscript {
     repositories {
-        // KHÔNG khai báo repositories ở đây nữa nếu dùng dependencyResolutionManagement
-        // Gradle sẽ tự động sử dụng các repo trong settings.gradle
-        // Nếu bạn gặp lỗi không tìm thấy plugin ở đây, hãy đảm bảo repo đó có trong settings.gradle
-        google() // Có thể cần giữ lại cho chính buildscript nếu plugin không được tìm thấy
-        mavenCentral() // Có thể cần giữ lại cho chính buildscript
+        google()
+        mavenCentral()
     }
     dependencies {
         // classpath "com.android.tools.build:gradle:..." // Thường không cần nếu dùng alias
@@ -27,14 +24,16 @@ plugins {
     id 'com.google.gms.google-services' version '4.4.2' apply false // Giữ lại hoặc bỏ đi tùy cách áp dụng trong app
 }
 
-// XÓA HOÀN TOÀN KHỐI allprojects { repositories { ... } } KHỎI ĐÂY
-/*
+
+// Khối allprojects để cấu hình repositories cho tất cả các project (bao gồm cả root và sub-projects)
+// Khối này vẫn cần thiết nếu dependencyResolutionManagement trong settings.gradle không bao phủ hết
 allprojects {
     repositories {
-        // Các khai báo repo ở đây sẽ gây lỗi khi dùng FAIL_ON_PROJECT_REPOS
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' } // Cần cho MPAndroidChart
     }
 }
-*/
 
 tasks.register('clean', Delete) {
     delete rootProject.buildDir

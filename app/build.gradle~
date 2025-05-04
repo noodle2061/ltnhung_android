@@ -45,7 +45,7 @@ dependencies {
 
     // Firebase BoM (Bill of Materials) - Quản lý phiên bản các thư viện Firebase
     // Giữ nguyên phiên bản hoặc cập nhật lên phiên bản mới nhất nếu muốn
-    implementation platform('com.google.firebase:firebase-bom:33.1.3') // Kiểm tra phiên bản mới nhất
+    implementation platform('com.google.firebase:firebase-bom:33.2.0') // Thay bằng phiên bản mới nhất/ổn định
 
     // Firebase Analytics (Đã có)
     implementation 'com.google.firebase:firebase-analytics'

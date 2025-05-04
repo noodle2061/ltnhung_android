@@ -1,23 +1,21 @@
+// settings.gradle
+
 pluginManagement {
-    repositories {
-        google {
-            content {
-                includeGroupByRegex("com\\.android.*")
-                includeGroupByRegex("com\\.google.*")
-                includeGroupByRegex("androidx.*")
-            }
-        }
-        mavenCentral()
-        gradlePluginPortal()
-    }
-}
-dependencyResolutionManagement {
-    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         google()
         mavenCentral()
+        gradlePluginPortal()
+        maven { url 'https://jitpack.io' } // Thêm Jitpack cho MPAndroidChart
+    }
+}
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS) // Chế độ quản lý repo được khuyến nghị
+    repositories {
+        google()
+        mavenCentral()
+        maven { url 'https://jitpack.io' } // Thêm Jitpack cho MPAndroidChart
     }
 }
 
-rootProject.name = "Nhan Dien Tieng Het"
-include ':app'
+rootProject.name = "Nhan Dien Tieng Het" // Hoặc tên dự án của bạn
+include ':app' // Bao gồm module app

@@ -39,9 +39,9 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     private static final String TAG = "MyFirebaseMsgService";
     private final ExecutorService executorService = Executors.newSingleThreadExecutor();
 
-    // Actions và Extras cho việc gửi log và token
-    public static final String ACTION_UPDATE_LOG = "com.example.nhandientienghet.UPDATE_LOG";
-    public static final String EXTRA_LOG_MESSAGE = "extra_log_message";
+    // Actions và Extras cho việc gửi token
+    // public static final String ACTION_UPDATE_LOG = "com.example.nhandientienghet.UPDATE_LOG"; // Removed
+    // public static final String EXTRA_LOG_MESSAGE = "extra_log_message"; // Removed
     public static final String ACTION_UPDATE_TOKEN = "com.example.nhandientienghet.UPDATE_TOKEN";
     public static final String EXTRA_FCM_TOKEN = "extra_fcm_token";
     public static final String PREF_LAST_TOKEN = "last_fcm_token";
@@ -61,7 +61,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onMessageReceived(@NonNull RemoteMessage remoteMessage) {
         Log.d(TAG, "From: " + remoteMessage.getFrom());
-        sendLogUpdate("Nhận được tin nhắn từ: " + remoteMessage.getFrom());
+        // sendLogUpdate("Nhận được tin nhắn từ: " + remoteMessage.getFrom()); // Removed
 
         String notificationTitle = null;
         String notificationBody = null;
@@ -73,14 +73,14 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             notificationBody = remoteMessage.getNotification().getBody();
             Log.d(TAG, "Message Notification Title: " + notificationTitle);
             Log.d(TAG, "Message Notification Body: " + notificationBody);
-            sendLogUpdate("Payload thông báo: Tiêu đề='" + notificationTitle + "', Nội dung='" + notificationBody + "'");
+            // sendLogUpdate("Payload thông báo: Tiêu đề='" + notificationTitle + "', Nội dung='" + notificationBody + "'"); // Removed
         }
 
         // Kiểm tra data payload
         if (remoteMessage.getData().size() > 0) {
             Map<String, String> data = remoteMessage.getData();
             Log.d(TAG, "Message data payload: " + data);
-            sendLogUpdate("Payload dữ liệu: " + data.toString());
+            // sendLogUpdate("Payload dữ liệu: " + data.toString()); // Removed
 
             // Ghi đè title/body nếu có trong data payload
             if (data.containsKey("title") && notificationTitle == null) {
@@ -94,7 +94,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
             if (data.containsKey(DATA_KEY_AUDIO_URL)) {
                 audioUrl = data.get(DATA_KEY_AUDIO_URL);
                 Log.i(TAG, "Audio URL found in data payload: " + audioUrl);
-                sendLogUpdate("Đã tìm thấy Audio URL: " + audioUrl);
+                // sendLogUpdate("Đã tìm thấy Audio URL: " + audioUrl); // Removed
 
                 // --- KIỂM TRA TRẠNG THÁI APP VÀ XỬ LÝ AUDIO ---
                 if (MainActivity.isActivityVisible) {
@@ -124,13 +124,13 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                         sendNotification(notificationTitle, notificationBody, audioUrl, true); // Vẫn cho phép mở app từ noti
                     } catch (SecurityException e) {
                         Log.e(TAG, "Missing FOREGROUND_SERVICE permission?", e);
-                        sendLogUpdate("Lỗi: Thiếu quyền FOREGROUND_SERVICE để phát nhạc nền.");
+                        // sendLogUpdate("Lỗi: Thiếu quyền FOREGROUND_SERVICE để phát nhạc nền."); // Removed
                         // Gửi notification lỗi hoặc chỉ log
                         sendNotification("Lỗi phát nhạc nền", "Thiếu quyền cần thiết.", null, false);
                     } catch (IllegalStateException e) {
                         // Lỗi này thường xảy ra trên Android 8+ nếu không gọi startForegroundService
                         Log.e(TAG, "Failed to start service in background (requires startForegroundService on O+)", e);
-                        sendLogUpdate("Lỗi: Không thể bắt đầu service phát nhạc nền.");
+                        // sendLogUpdate("Lỗi: Không thể bắt đầu service phát nhạc nền."); // Removed
                         sendNotification("Lỗi phát nhạc nền", "Không thể khởi động dịch vụ.", null, false);
                     }
                 }
@@ -138,7 +138,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
 
             } else {
                 Log.w(TAG, "Data payload does not contain key: " + DATA_KEY_AUDIO_URL);
-                sendLogUpdate("Không tìm thấy Audio URL trong dữ liệu.");
+                // sendLogUpdate("Không tìm thấy Audio URL trong dữ liệu."); // Removed
                 // Nếu không có audio URL, chỉ hiển thị notification thông thường
                 if (notificationTitle != null && notificationBody != null) {
                     sendNotification(notificationTitle, notificationBody, null, true);
@@ -156,18 +156,21 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onNewToken(@NonNull String token) {
         Log.d(TAG, "Refreshed token: " + token);
-        sendLogUpdate("FCM Token mới: " + token.substring(0, 15) + "...");
+        // sendLogUpdate("FCM Token mới: " + token.substring(0, 15) + "..."); // Removed
 
         saveTokenToPrefs(token);
         sendRegistrationToServer(token);
         sendTokenUpdate(token);
     }
 
+    // Removed sendLogUpdate method
+    /*
     private void sendLogUpdate(String message) {
         Intent intent = new Intent(ACTION_UPDATE_LOG);
         intent.putExtra(EXTRA_LOG_MESSAGE, message);
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
     }
+    */
 
     private void sendTokenUpdate(String token) {
         Intent intent = new Intent(ACTION_UPDATE_TOKEN);
@@ -176,7 +179,8 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     }
 
     private void saveTokenToPrefs(String token) {
-        String prefsName = "TcpClientPrefs";
+        // Assuming MainActivity.PREFS_NAME exists or replace with your prefs name
+        String prefsName = "TcpClientPrefs"; // Use a consistent name
         SharedPreferences prefs = getSharedPreferences(prefsName, MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
         editor.putString(PREF_LAST_TOKEN, token);
@@ -186,9 +190,10 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
 
 
     private void sendRegistrationToServer(final String token) {
-        sendLogUpdate("Đang chuẩn bị gửi token lên server...");
+        // sendLogUpdate("Đang chuẩn bị gửi token lên server..."); // Removed
+        Log.i(TAG, "Preparing to send token to server...");
         executorService.execute(() -> {
-            String serverUrlString = "http://192.168.1.102:5000/register_token"; // <<< Kiểm tra lại IP nếu cần
+            String serverUrlString = "http://192.168.56.103:5000/register_token"; // <<< Kiểm tra lại IP nếu cần
             HttpURLConnection urlConnection = null;
             boolean success = false;
             String serverResponseMessage = "N/A";
@@ -236,24 +241,28 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
                 }
 
                 if(success) {
-                    sendLogUpdate("Gửi token lên server ("+ serverUrlString +") thành công. Phản hồi: " + serverResponseMessage);
+                    // sendLogUpdate("Gửi token lên server ("+ serverUrlString +") thành công. Phản hồi: " + serverResponseMessage); // Removed
+                    Log.i(TAG, "Token sent to server ("+ serverUrlString +") successfully. Response: " + serverResponseMessage);
                 } else {
-                    sendLogUpdate("Gửi token lên server ("+ serverUrlString +") thất bại. Mã lỗi: " + responseCode + ". Phản hồi: " + serverResponseMessage);
+                    // sendLogUpdate("Gửi token lên server ("+ serverUrlString +") thất bại. Mã lỗi: " + responseCode + ". Phản hồi: " + serverResponseMessage); // Removed
+                    Log.e(TAG, "Failed to send token to server ("+ serverUrlString +"). Code: " + responseCode + ". Response: " + serverResponseMessage);
                 }
 
             } catch (MalformedURLException e) {
                 Log.e(TAG, "Error creating URL: " + serverUrlString, e);
-                sendLogUpdate("Lỗi URL khi gửi token: " + e.getMessage());
+                // sendLogUpdate("Lỗi URL khi gửi token: " + e.getMessage()); // Removed
             } catch (IOException e) {
                 if (e instanceof java.net.ConnectException) {
-                    sendLogUpdate("Lỗi kết nối đến server ("+ serverUrlString +"): " + e.getMessage() + ". Kiểm tra IP/Port và server có đang chạy không.");
+                    // sendLogUpdate("Lỗi kết nối đến server ("+ serverUrlString +"): " + e.getMessage() + ". Kiểm tra IP/Port và server có đang chạy không."); // Removed
+                    Log.e(TAG, "Connection error sending token to server ("+ serverUrlString +"): " + e.getMessage() + ". Check IP/Port and if server is running.");
                 } else {
-                    sendLogUpdate("Lỗi IO khi gửi token: " + e.getMessage());
+                    // sendLogUpdate("Lỗi IO khi gửi token: " + e.getMessage()); // Removed
+                    Log.e(TAG, "IO error sending token: " + e.getMessage());
                 }
                 Log.e(TAG, "Error sending token to server: " + e.getMessage(), e);
             } catch (JSONException e) {
                 Log.e(TAG, "Error creating JSON for token", e);
-                sendLogUpdate("Lỗi tạo JSON khi gửi token.");
+                // sendLogUpdate("Lỗi tạo JSON khi gửi token."); // Removed
             } finally {
                 if (urlConnection != null) {
                     urlConnection.disconnect();
@@ -279,7 +288,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
         Uri defaultSoundUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION);
         NotificationCompat.Builder notificationBuilder =
                 new NotificationCompat.Builder(this, channelId)
-                        .setSmallIcon(R.drawable.ic_launcher_foreground)
+                        .setSmallIcon(R.drawable.ic_launcher_foreground) // Consider using a specific notification icon
                         .setContentTitle(messageTitle != null ? messageTitle : getString(R.string.app_name))
                         .setContentText(messageBody)
                         .setAutoCancel(true) // Tự hủy khi bấm vào
@@ -293,20 +302,30 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
         NotificationManager notificationManager =
                 (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
 
+        // Create the NotificationChannel, but only on API 26+ because
+        // the NotificationChannel class is new and not in the support library
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             CharSequence name = getString(R.string.default_notification_channel_name);
             String description = getString(R.string.default_notification_channel_description);
             int importance = NotificationManager.IMPORTANCE_HIGH;
             NotificationChannel channel = new NotificationChannel(channelId, name, importance);
             channel.setDescription(description);
-            notificationManager.createNotificationChannel(channel);
+            // Register the channel with the system; you can't change the importance
+            // or other notification behaviors after this
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+            }
         }
 
-        int notificationId = (int) System.currentTimeMillis();
-        notificationManager.notify(notificationId, notificationBuilder.build());
-        // Chỉ log nếu thực sự hiển thị thông báo (có title/body)
-        if (messageTitle != null || messageBody != null) {
-            sendLogUpdate("Đã hiển thị thông báo trên thiết bị.");
+        int notificationId = (int) System.currentTimeMillis(); // Use a unique ID
+        if (notificationManager != null) {
+            if (messageTitle != null || messageBody != null) { // Only notify if there is content
+                notificationManager.notify(notificationId, notificationBuilder.build());
+                // sendLogUpdate("Đã hiển thị thông báo trên thiết bị."); // Removed
+                Log.i(TAG, "Notification displayed on device.");
+            }
+        } else {
+            Log.e(TAG, "NotificationManager is null, cannot display notification.");
         }
     }
 

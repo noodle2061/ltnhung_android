@@ -18,7 +18,7 @@ import android.widget.Toast; // Thêm để hiển thị thông báo lỗi ngắ
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
-import androidx.localbroadcastmanager.content.LocalBroadcastManager; // Gửi log về MainActivity
+// import androidx.localbroadcastmanager.content.LocalBroadcastManager; // Gửi log về MainActivity - Removed
 
 import java.io.IOException;
 
@@ -51,7 +51,8 @@ public class AudioPlaybackService extends Service implements MediaPlayer.OnPrepa
         } else {
             Log.e(TAG, "Failed to get PowerManager service.");
         }
-        sendLogUpdate("AudioPlaybackService đã tạo.");
+        // sendLogUpdate("AudioPlaybackService đã tạo."); // Removed
+        Log.i(TAG, "AudioPlaybackService created.");
     }
 
     @Override
@@ -90,7 +91,7 @@ public class AudioPlaybackService extends Service implements MediaPlayer.OnPrepa
             stopSelf(); // Dừng service
         } else if (audioUrl == null && ACTION_PLAY.equals(action)) {
             Log.e(TAG, "Received PLAY action without audio URL.");
-            sendLogUpdate("Lỗi: Yêu cầu phát nhưng thiếu URL audio.");
+            // sendLogUpdate("Lỗi: Yêu cầu phát nhưng thiếu URL audio."); // Removed
             stopSelf();
         }
 
@@ -102,7 +103,8 @@ public class AudioPlaybackService extends Service implements MediaPlayer.OnPrepa
         // releaseMediaPlayer(); // Đảm bảo player cũ được giải phóng // Lỗi ở đây trong code gốc của user
         stopPlayback(); // Sửa thành stopPlayback()
         isPreparing = true;
-        sendLogUpdate("Bắt đầu khởi tạo MediaPlayer cho phát nhạc nền.");
+        // sendLogUpdate("Bắt đầu khởi tạo MediaPlayer cho phát nhạc nền."); // Removed
+        Log.i(TAG, "Initializing MediaPlayer for background playback.");
 
         mediaPlayer = new MediaPlayer();
         mediaPlayer.setAudioAttributes(
@@ -126,10 +128,11 @@ public class AudioPlaybackService extends Service implements MediaPlayer.OnPrepa
             mediaPlayer.setOnErrorListener(this);
             mediaPlayer.setOnCompletionListener(this);
             mediaPlayer.prepareAsync(); // Chuẩn bị bất đồng bộ
-            sendLogUpdate("MediaPlayer (nền) đang chuẩn bị...");
+            // sendLogUpdate("MediaPlayer (nền) đang chuẩn bị..."); // Removed
+            Log.i(TAG, "MediaPlayer (background) preparing...");
         } catch (IOException | IllegalArgumentException | SecurityException | IllegalStateException e) {
             Log.e(TAG, "Error setting data source or preparing MediaPlayer", e);
-            sendLogUpdate("Lỗi khi chuẩn bị MediaPlayer (nền): " + e.getMessage());
+            // sendLogUpdate("Lỗi khi chuẩn bị MediaPlayer (nền): " + e.getMessage()); // Removed
             stopPlayback(); // Dừng nếu có lỗi ngay
             stopSelf();
         }
@@ -139,14 +142,15 @@ public class AudioPlaybackService extends Service implements MediaPlayer.OnPrepa
     public void onPrepared(MediaPlayer mp) {
         Log.i(TAG, "MediaPlayer (background) prepared.");
         isPreparing = false;
-        sendLogUpdate("MediaPlayer (nền) đã sẵn sàng, bắt đầu phát.");
+        // sendLogUpdate("MediaPlayer (nền) đã sẵn sàng, bắt đầu phát."); // Removed
         try {
             mp.start();
             // Cập nhật notification để hiển thị trạng thái "Đang phát" và nút Stop
             startForeground(NOTIFICATION_ID, createNotification("Đang phát...", currentUrl, true));
+            Log.i(TAG, "MediaPlayer (background) playback started.");
         } catch (IllegalStateException e) {
             Log.e(TAG, "Error starting playback after prepare", e);
-            sendLogUpdate("Lỗi khi bắt đầu phát nhạc nền: " + e.getMessage());
+            // sendLogUpdate("Lỗi khi bắt đầu phát nhạc nền: " + e.getMessage()); // Removed
             stopPlayback();
             stopSelf();
         }
@@ -157,7 +161,7 @@ public class AudioPlaybackService extends Service implements MediaPlayer.OnPrepa
         Log.e(TAG, "MediaPlayer (background) Error: what=" + what + ", extra=" + extra);
         isPreparing = false;
         String errorMsg = getMediaPlayerErrorString(what, extra); // Sử dụng hàm helper
-        sendLogUpdate("Lỗi MediaPlayer (nền): " + errorMsg);
+        // sendLogUpdate("Lỗi MediaPlayer (nền): " + errorMsg); // Removed
         Toast.makeText(this, "Lỗi phát audio nền: " + errorMsg, Toast.LENGTH_LONG).show(); // Hiển thị lỗi cho người dùng
         stopPlayback();
         stopSelf();
@@ -168,7 +172,7 @@ public class AudioPlaybackService extends Service implements MediaPlayer.OnPrepa
     public void onCompletion(MediaPlayer mp) {
         Log.i(TAG, "MediaPlayer (background) playback completed.");
         isPreparing = false;
-        sendLogUpdate("Phát audio nền hoàn tất.");
+        // sendLogUpdate("Phát audio nền hoàn tất."); // Removed
         stopPlayback();
         stopSelf(); // Tự động dừng service khi phát xong
     }
@@ -207,7 +211,8 @@ public class AudioPlaybackService extends Service implements MediaPlayer.OnPrepa
         super.onDestroy();
         Log.d(TAG, "onDestroy");
         stopPlayback(); // Đảm bảo mọi thứ được giải phóng
-        sendLogUpdate("AudioPlaybackService đã dừng.");
+        // sendLogUpdate("AudioPlaybackService đã dừng."); // Removed
+        Log.i(TAG, "AudioPlaybackService destroyed.");
     }
 
     @Nullable
@@ -253,18 +258,22 @@ public class AudioPlaybackService extends Service implements MediaPlayer.OnPrepa
             stopIntent.setAction(ACTION_STOP);
             // Sử dụng request code khác 0 để tránh xung đột với pendingIntent của notification content
             PendingIntent stopPendingIntent = PendingIntent.getService(this, 1, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            builder.addAction(R.drawable.ic_media_stop, "Dừng", stopPendingIntent); // Thêm nút Stop
+            // Use a standard stop icon if available, otherwise keep the placeholder
+            int stopIcon = android.R.drawable.ic_media_pause; // Or ic_media_stop
+            builder.addAction(stopIcon, "Dừng", stopPendingIntent); // Thêm nút Stop
         }
 
         return builder.build();
     }
 
-    // Gửi log về MainActivity nếu cần
+    // Gửi log về MainActivity nếu cần - Removed
+    /*
     private void sendLogUpdate(String message) {
         Intent intent = new Intent(MyFirebaseMessagingService.ACTION_UPDATE_LOG); // Dùng action giống FCM Service
         intent.putExtra(MyFirebaseMessagingService.EXTRA_LOG_MESSAGE, "[AudioSvc] " + message); // Thêm prefix để phân biệt
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
     }
+    */
 
     // Hàm helper lấy chuỗi lỗi
     private String getMediaPlayerErrorString(int what, int extra) {

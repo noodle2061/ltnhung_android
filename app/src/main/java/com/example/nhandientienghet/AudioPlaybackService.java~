@@ -253,7 +253,7 @@ public class AudioPlaybackService extends Service implements MediaPlayer.OnPrepa
             stopIntent.setAction(ACTION_STOP);
             // Sử dụng request code khác 0 để tránh xung đột với pendingIntent của notification content
             PendingIntent stopPendingIntent = PendingIntent.getService(this, 1, stopIntent, PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
-            builder.addAction(android.R.drawable.ic_media_stop, "Dừng", stopPendingIntent); // Thêm nút Stop
+            builder.addAction(R.drawable.ic_media_stop, "Dừng", stopPendingIntent); // Thêm nút Stop
         }
 
         return builder.build();

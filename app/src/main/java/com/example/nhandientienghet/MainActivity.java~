@@ -57,7 +57,6 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
     // private Button btnClearLog; // Removed
     private Button btnPlayAudio;
     private TextView tvAudioStatus;
-    private Button btnViewChart; // Thêm nút xem biểu đồ
     // ---------------------------
 
     // private BroadcastReceiver logReceiver; // Removed
@@ -103,7 +102,6 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         // btnClearLog = findViewById(R.id.btnClearLog); // Removed
         btnPlayAudio = findViewById(R.id.btnPlayAudio);
         tvAudioStatus = findViewById(R.id.tvAudioStatus);
-        btnViewChart = findViewById(R.id.btnViewChart); // Ánh xạ nút xem biểu đồ
 
         // tvLogDisplay.setMovementMethod(new ScrollingMovementMethod()); // Removed
 
@@ -125,14 +123,6 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         btnPlayAudio.setOnClickListener(v -> {
             togglePlayPauseAudio();
         });
-
-        // Listener cho nút View Chart
-        btnViewChart.setOnClickListener(v -> {
-            Log.d(TAG, "View Chart button clicked.");
-            Intent chartIntent = new Intent(MainActivity.this, ChartActivity.class);
-            startActivity(chartIntent);
-        });
-
 
         // Cấu hình BroadcastReceiver để nhận token
         tokenReceiver = new BroadcastReceiver() {

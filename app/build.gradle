@@ -6,12 +6,12 @@ plugins {
 
 android {
     namespace 'com.example.nhandientienghet'
-    compileSdk 35
+    compileSdk 35 // Hoặc phiên bản SDK bạn đang dùng
 
     defaultConfig {
         applicationId "com.example.nhandientienghet"
         minSdk 24
-        targetSdk 35
+        targetSdk 35 // Hoặc phiên bản SDK bạn đang dùng
         versionCode 1
         versionName "1.0"
 
@@ -50,10 +50,17 @@ dependencies {
     // Firebase Analytics (Đã có)
     implementation 'com.google.firebase:firebase-analytics'
 
-    // --- THÊM DÒNG NÀY ---
-    // Firebase Cloud Messaging
+    // Firebase Cloud Messaging (Đã có)
     implementation 'com.google.firebase:firebase-messaging'
-    // ---------------------
+
+    // --- THÊM CÁC DÒNG NÀY ---
+    // Firebase Realtime Database
+    implementation 'com.google.firebase:firebase-database'
+
+    // MPAndroidChart library
+    implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0' // Kiểm tra phiên bản mới nhất trên JitPack/GitHub
+    // -------------------------
+
 
     // Thêm dòng này nếu bạn bật coreLibraryDesugaring ở trên
     // coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4' // Kiểm tra phiên bản mới nhất
