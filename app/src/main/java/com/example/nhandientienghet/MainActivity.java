@@ -34,31 +34,50 @@ import androidx.core.view.ViewCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
-// Bỏ import không cần thiết
-// import com.google.android.gms.tasks.OnCompleteListener;
-// import com.google.android.gms.tasks.Task;
-// import com.google.firebase.messaging.FirebaseMessaging;
+// Thêm thư viện Volley và JSON
+import com.android.volley.Request;
+import com.android.volley.RequestQueue;
+import com.android.volley.toolbox.JsonObjectRequest;
+import com.android.volley.toolbox.StringRequest;
+import com.android.volley.toolbox.Volley;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
 
 import java.io.IOException;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Locale;
+import java.util.Objects; // Import Objects để kiểm tra null
+import java.util.TimeZone;
 
 public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPreparedListener, MediaPlayer.OnErrorListener, MediaPlayer.OnCompletionListener {
 
     private static final String TAG = "MainActivity";
     public static boolean isActivityVisible;
 
+    // --- Server URLs (Thêm vào đây hoặc lấy từ strings.xml) ---
+    // <<< THAY THẾ IP/PORT SERVER CỦA BẠN >>>
+    private static final String SERVER_BASE_URL = "http://192.168.209.103:5000";
+    private static final String HISTORY_API_URL = SERVER_BASE_URL + "/alert_history";
+    private static final String GET_AUDIO_URL_API = SERVER_BASE_URL + "/get_audio_url";
+    private static final String VOLLEY_TAG = "MainActivityVolley"; // Tag cho request Volley
+
     // --- UI Components (Updated) ---
     private TextView tvGreeting;
-    private TextView tvDeviceStatusLabel;
-    private TextView tvDeviceStatus;
+    // private TextView tvDeviceStatusLabel; // <<< BỎ
+    // private TextView tvDeviceStatus;      // <<< BỎ
     private TextView tvLastNoiseTimeLabel;
     private TextView tvLastNoiseTime;
     private ImageButton btnMainPlayPause;
     private ProgressBar progressBarMainAudio;
     private Button btnViewChart;
     private Button btnViewHistory;
+    private Button btnStatistics;
+    private Button btnEditInfo;
 
     // --- Broadcast Receivers and Filters ---
     private BroadcastReceiver playAudioReceiver; // Receiver for handling PLAY_AUDIO_NOW
@@ -72,6 +91,9 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
     private boolean isLastAudioPrepared = false;
     private Handler lastAudioProgressHandler; // Handler for the CardView's progress bar
     private Runnable lastAudioProgressRunnable; // Runnable for the handler
+
+    // --- Volley Request Queue ---
+    private RequestQueue requestQueue;
 
     // ActivityResultLauncher for requesting POST_NOTIFICATIONS permission
     private final ActivityResultLauncher<String> requestPermissionLauncher =
@@ -93,16 +115,21 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         EdgeToEdge.enable(this);
         setContentView(R.layout.activity_main);
 
+        // --- Initialize Volley Request Queue ---
+        requestQueue = Volley.newRequestQueue(this);
+
         // --- Initialize UI Views (Updated) ---
         tvGreeting = findViewById(R.id.tvGreeting);
-        tvDeviceStatusLabel = findViewById(R.id.tvDeviceStatusLabel);
-        tvDeviceStatus = findViewById(R.id.tvDeviceStatus);
+        // tvDeviceStatusLabel = findViewById(R.id.tvDeviceStatusLabel); // <<< BỎ
+        // tvDeviceStatus = findViewById(R.id.tvDeviceStatus);          // <<< BỎ
         tvLastNoiseTimeLabel = findViewById(R.id.tvLastNoiseTimeLabel);
         tvLastNoiseTime = findViewById(R.id.tvLastNoiseTime);
         btnMainPlayPause = findViewById(R.id.btnMainPlayPause);
         progressBarMainAudio = findViewById(R.id.progressBarMainAudio);
         btnViewChart = findViewById(R.id.btnViewChart);
         btnViewHistory = findViewById(R.id.btnViewHistory);
+        btnStatistics = findViewById(R.id.btnStatistics);
+        btnEditInfo = findViewById(R.id.btnEditInfo);
 
         // --- Apply Window Insets ---
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
@@ -123,6 +150,17 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
             Intent historyIntent = new Intent(MainActivity.this, HistoryActivity.class);
             startActivity(historyIntent);
         });
+        btnStatistics.setOnClickListener(v -> {
+            Log.d(TAG, "Statistics button clicked.");
+            Intent statisticsIntent = new Intent(MainActivity.this, StatisticsActivity.class);
+            startActivity(statisticsIntent);
+        });
+        btnEditInfo.setOnClickListener(v -> {
+            Log.d(TAG, "Edit Info button clicked.");
+            Intent editInfoIntent = new Intent(MainActivity.this, EditInfoActivity.class);
+            startActivity(editInfoIntent);
+        });
+
 
         // --- Setup Broadcast Receivers ---
         // Token receiver is removed
@@ -145,7 +183,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
 
                         // Store the new URL and update UI
                         lastReceivedAudioUrl = urlToPlay;
-                        updateLastNoiseTime(); // Update the timestamp display
+                        updateLastNoiseTime(null); // Cập nhật thời gian hiện tại
                         updateAudioControlsVisibility(true); // Make controls visible
 
                         // Don't auto-play, let the user click the button
@@ -188,10 +226,14 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         // --- Initial Setup ---
         askNotificationPermission();
         // Fetching token is removed
-        handleIntent(getIntent()); // Handle initial intent
-        updateAudioControlsVisibility(lastReceivedAudioUrl != null); // Set initial visibility
-        // TODO: Add logic to fetch initial device status
-        updateDeviceStatus("Chưa xác định"); // Placeholder
+
+        // <<< QUAN TRỌNG: Xử lý Intent ngay trong onCreate >>>
+        // Ưu tiên xử lý URL từ Intent (nếu có) trước khi fetch cái mới nhất
+        boolean handledByIntent = handleIntent(getIntent()); // Handle initial intent
+
+        // Cập nhật trạng thái ban đầu (sau khi handleIntent)
+        updateAudioControlsVisibility(lastReceivedAudioUrl != null); // Set initial visibility based on handled intent
+        // updateDeviceStatus("Chưa xác định"); // <<< BỎ LỜI GỌI NÀY
     }
 
     // Called when the activity is already running and receives a new intent
@@ -200,64 +242,82 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         super.onNewIntent(intent);
         Log.d(TAG, "onNewIntent called with intent: " + intent);
         setIntent(intent); // Update the activity's intent
-        handleIntent(intent); // Process the new intent
+        // <<< QUAN TRỌNG: Xử lý Intent mới ở đây >>>
+        handleIntent(intent); // Process the new intent (từ notification khi activity đã chạy)
     }
 
-    // Processes the intent to extract the audio URL for the main card
-    private void handleIntent(Intent intent) {
-        Log.d(TAG, "Handling intent: " + intent);
+    /**
+     * Processes the intent to extract the audio URL for the main card.
+     * @param intent The intent to process.
+     * @return true if the intent contained a valid audio URL and was handled, false otherwise.
+     */
+    private boolean handleIntent(Intent intent) {
+        Log.d(TAG, "Handling intent: " + (intent != null ? intent.toString() + " Extras: " + intent.getExtras() : "null"));
+        boolean handled = false; // Cờ để biết intent có chứa URL không
         if (intent != null && intent.hasExtra(MyFirebaseMessagingService.EXTRA_AUDIO_URL)) {
             String receivedUrl = intent.getStringExtra(MyFirebaseMessagingService.EXTRA_AUDIO_URL);
             Log.i(TAG, "Received Audio URL from Intent for main card: " + receivedUrl);
 
-            if (receivedUrl != null && !receivedUrl.equals(lastReceivedAudioUrl)) {
-                // Stop the background service if user opened the app via notification
-                stopBackgroundPlaybackService();
-                // Reset playback if a different audio was playing in the card
-                resetLastAudioPlaybackState();
-                // Store the new URL
-                lastReceivedAudioUrl = receivedUrl;
-                updateLastNoiseTime(); // Update timestamp display
-                updateAudioControlsVisibility(true); // Show controls
-            } else if (lastReceivedAudioUrl == null && receivedUrl != null) {
-                // Case where there was no URL before
-                stopBackgroundPlaybackService();
-                lastReceivedAudioUrl = receivedUrl;
-                updateLastNoiseTime();
+            // Luôn dừng service nền nếu mở từ intent có URL (thường là từ notification)
+            stopBackgroundPlaybackService();
+
+            // Chỉ cập nhật và reset nếu URL mới thực sự khác URL đang có HOẶC chưa có URL nào
+            if (receivedUrl != null && !receivedUrl.isEmpty() && !Objects.equals(receivedUrl, lastReceivedAudioUrl)) {
+                Log.d(TAG, "New or different audio URL received via Intent. Resetting state.");
+                resetLastAudioPlaybackState(); // Reset playback state cũ
+                lastReceivedAudioUrl = receivedUrl; // Cập nhật URL mới
+                updateLastNoiseTime(null); // Cập nhật thời gian hiện tại
+                updateAudioControlsVisibility(true); // Hiển thị controls cho URL mới
+                handled = true; // Đánh dấu đã xử lý URL từ intent
+            } else if (receivedUrl != null && !receivedUrl.isEmpty()) {
+                // URL giống hệt cái cũ, chỉ cần đảm bảo controls hiển thị
+                Log.d(TAG, "Same audio URL received via Intent. Ensuring controls are visible.");
                 updateAudioControlsVisibility(true);
+                handled = true; // Vẫn coi như đã xử lý vì có URL trong intent
             } else {
-                // URL is the same or null, no reset needed, but stop background service
-                Log.d(TAG, "Received URL is the same as current last URL or null.");
-                stopBackgroundPlaybackService();
-                // Ensure controls visibility is correct based on existing URL
+                // receivedUrl là null hoặc empty từ intent
+                Log.w(TAG, "Intent has EXTRA_AUDIO_URL, but the value is null or empty.");
+                // Giữ nguyên trạng thái hiện tại, không reset
                 updateAudioControlsVisibility(lastReceivedAudioUrl != null);
+                // handled vẫn là false
             }
+            // <<< QUAN TRỌNG: Xóa extra khỏi intent sau khi xử lý để tránh xử lý lại >>>
+            intent.removeExtra(MyFirebaseMessagingService.EXTRA_AUDIO_URL);
+
         } else {
             Log.d(TAG, "Intent does not contain EXTRA_AUDIO_URL for main card.");
-            // Ensure controls are hidden if no URL is available
+            // Không làm gì nếu intent không có URL, giữ nguyên trạng thái hiện tại
             updateAudioControlsVisibility(lastReceivedAudioUrl != null);
+            // handled vẫn là false
         }
+        return handled; // Trả về true nếu intent có URL và đã được xử lý
     }
 
     @Override
     protected void onStart() {
         super.onStart();
-        Log.d(TAG, "onStart - Registering receivers");
+        Log.d(TAG, "onStart - Registering receivers and fetching latest alert");
         isActivityVisible = true;
         // Register local broadcast receiver
         LocalBroadcastManager.getInstance(this).registerReceiver(playAudioReceiver, playAudioFilter);
-        // Stop the background playback service if it's running
-        stopBackgroundPlaybackService();
+
+        // <<< GỌI HÀM LẤY THÔNG TIN MỚI NHẤT KHI ACTIVITY START >>>
+        fetchLatestAlertInfo();
+
         // TODO: Add logic to re-check device status if needed
     }
 
     @Override
     protected void onStop() {
         super.onStop();
-        Log.d(TAG, "onStop - Unregistering receivers");
+        Log.d(TAG, "onStop - Unregistering receivers and cancelling Volley requests");
         isActivityVisible = false;
         // Unregister local broadcast receiver
         LocalBroadcastManager.getInstance(this).unregisterReceiver(playAudioReceiver);
+        // Hủy các request Volley đang chờ của Activity này để tránh lỗi
+        if (requestQueue != null) {
+            requestQueue.cancelAll(VOLLEY_TAG);
+        }
     }
 
     @Override
@@ -284,9 +344,11 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         super.onResume();
         Log.d(TAG, "onResume");
         isActivityVisible = true;
-        // Stop background service if it was running
-        stopBackgroundPlaybackService();
+        // Stop background service if it was running (có thể dư thừa)
+        // stopBackgroundPlaybackService();
         // Don't auto-resume audio, user needs to press play again
+        // <<< QUAN TRỌNG: Cập nhật lại visibility phòng trường hợp state thay đổi khi app pause >>>
+        updateAudioControlsVisibility(lastReceivedAudioUrl != null);
     }
 
     @Override
@@ -296,6 +358,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         isActivityVisible = false;
         stopLastAudioProgressUpdater(); // Stop handler
         releaseLastAudioMediaPlayer(); // Release MediaPlayer resources
+        // Không cần hủy request queue ở đây, hủy trong onStop là đủ
     }
 
     // --- Permission Handling (Keep as is) ---
@@ -502,12 +565,17 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
             if (btnMainPlayPause != null) {
                 btnMainPlayPause.setImageResource(android.R.drawable.ic_media_play);
                 // Keep button enabled if URL exists, disable otherwise
-                btnMainPlayPause.setEnabled(lastReceivedAudioUrl != null && !lastReceivedAudioUrl.isEmpty());
+                // <<< SỬA LỖI: Không nên dựa vào lastReceivedAudioUrl ở đây vì nó có thể chưa được cập nhật >>>
+                // <<< Tạm thời disable, sẽ enable lại khi có URL mới hoặc khi fetch thành công >>>
+                btnMainPlayPause.setEnabled(false);
+                // btnMainPlayPause.setEnabled(lastReceivedAudioUrl != null && !lastReceivedAudioUrl.isEmpty());
             }
             if (progressBarMainAudio != null) {
                 progressBarMainAudio.setProgress(0);
                 // Keep visibility based on URL existence
-                progressBarMainAudio.setVisibility( (lastReceivedAudioUrl != null && !lastReceivedAudioUrl.isEmpty()) ? View.VISIBLE : View.INVISIBLE);
+                // <<< SỬA LỖI: Ẩn đi khi reset >>>
+                progressBarMainAudio.setVisibility(View.INVISIBLE);
+                // progressBarMainAudio.setVisibility( (lastReceivedAudioUrl != null && !lastReceivedAudioUrl.isEmpty()) ? View.VISIBLE : View.INVISIBLE);
             }
         });
     }
@@ -521,7 +589,8 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         runOnUiThread(() -> {
             Toast.makeText(MainActivity.this, logMessageForUser, Toast.LENGTH_LONG).show();
             // Ensure controls are appropriately enabled/disabled after error
-            updateAudioControlsVisibility(lastReceivedAudioUrl != null);
+            updateAudioControlsVisibility(false); // <<< SỬA LỖI: Luôn ẩn controls khi có lỗi >>>
+            // updateAudioControlsVisibility(lastReceivedAudioUrl != null);
         });
     }
 
@@ -562,37 +631,52 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
     // Updates the visibility of play/pause button and progress bar
     private void updateAudioControlsVisibility(boolean show) {
         runOnUiThread(() -> {
-            int visibility = show ? View.VISIBLE : View.INVISIBLE; // Use INVISIBLE to maintain layout space
+            // Sử dụng final để đảm bảo giá trị không đổi trong lambda
+            // <<< SỬA LỖI: Kiểm tra lastReceivedAudioUrl TRƯỚC KHI quyết định hiển thị >>>
+            final boolean shouldShowControls = show && (lastReceivedAudioUrl != null && !lastReceivedAudioUrl.isEmpty());
+            int visibility = shouldShowControls ? View.VISIBLE : View.INVISIBLE; // Use INVISIBLE to maintain layout space
+            Log.d(TAG, "updateAudioControlsVisibility: showParam=" + show + ", lastReceivedAudioUrl=" + lastReceivedAudioUrl + ", final visibility=" + (visibility == View.VISIBLE ? "VISIBLE" : "INVISIBLE"));
+
             if (btnMainPlayPause != null) {
                 btnMainPlayPause.setVisibility(visibility);
-                btnMainPlayPause.setEnabled(show); // Also enable/disable
+                // Chỉ enable nút khi nó hiển thị VÀ media player không phải đang chuẩn bị
+                btnMainPlayPause.setEnabled(shouldShowControls && (lastAudioMediaPlayer == null || isLastAudioPrepared));
             }
             if (progressBarMainAudio != null) {
                 progressBarMainAudio.setVisibility(visibility);
-                if (!show) {
+                if (!shouldShowControls) {
                     progressBarMainAudio.setProgress(0); // Reset progress when hiding
                 }
             }
         });
     }
 
-    // Updates the last noise time display
-    private void updateLastNoiseTime() {
+
+    /**
+     * Updates the last noise time display.
+     * @param isoTimestamp Optional ISO 8601 timestamp string. If null, uses current time.
+     */
+    private void updateLastNoiseTime(@androidx.annotation.Nullable String isoTimestamp) {
         runOnUiThread(() -> {
             if (tvLastNoiseTime != null) {
-                if (lastReceivedAudioUrl != null) {
-                    // Format the current time as the "last noise time"
+                String formattedTime;
+                if (isoTimestamp != null) {
+                    formattedTime = formatDisplayTimestamp(isoTimestamp); // Format timestamp từ server
+                } else if (lastReceivedAudioUrl != null) {
+                    // Nếu không có timestamp từ server nhưng có URL, dùng giờ hiện tại
                     SimpleDateFormat sdf = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault());
-                    String formattedTime = sdf.format(new Date());
-                    tvLastNoiseTime.setText(formattedTime);
+                    formattedTime = sdf.format(new Date());
                 } else {
-                    tvLastNoiseTime.setText(R.string.last_noise_time_none);
+                    formattedTime = getString(R.string.last_noise_time_none);
                 }
+                tvLastNoiseTime.setText(formattedTime);
             }
         });
     }
 
-    // Updates the device status display (Placeholder)
+
+    // Bỏ phương thức updateDeviceStatus
+    /*
     private void updateDeviceStatus(String status) {
         runOnUiThread(() -> {
             if (tvDeviceStatus != null) {
@@ -601,6 +685,7 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
             }
         });
     }
+    */
 
 
     // --- Background Service Control (Keep as is) ---
@@ -610,5 +695,175 @@ public class MainActivity extends AppCompatActivity implements MediaPlayer.OnPre
         stopIntent.setAction(AudioPlaybackService.ACTION_STOP);
         stopService(stopIntent);
     }
+
+    // --- Network Request Methods ---
+
+    /**
+     * Fetches the latest alert information from the server.
+     */
+    private void fetchLatestAlertInfo() {
+        String url = HISTORY_API_URL + "?limit=1"; // Request only the latest item
+        Log.d(TAG, "Fetching latest alert info from: " + url);
+
+        JsonObjectRequest jsonObjectRequest = new JsonObjectRequest(
+                Request.Method.GET, url, null,
+                response -> {
+                    Log.d(TAG, "Latest history response received: " + response.toString());
+                    try {
+                        String status = response.getString("status");
+                        if ("success".equals(status)) {
+                            JSONArray historyArray = response.getJSONArray("history");
+                            if (historyArray.length() > 0) {
+                                // Lấy item đầu tiên (mới nhất)
+                                JSONObject latestItem = historyArray.getJSONObject(0);
+                                String s3Key = latestItem.optString("s3_key", null);
+                                String timestamp = latestItem.optString("timestamp", null); // Lấy timestamp
+
+                                if (s3Key != null && !s3Key.isEmpty()) {
+                                    Log.i(TAG, "Latest alert has s3_key: " + s3Key + ", timestamp: " + timestamp);
+                                    // Nếu URL hiện tại khác với URL sắp lấy, hoặc chưa có URL nào
+                                    // thì mới tiến hành lấy URL mới và reset state
+                                    // (Tránh fetch lại URL nếu s3_key không đổi)
+                                    // <<< Cần so sánh s3_key thay vì URL vì URL có thể thay đổi >>>
+                                    // <<< Tạm thời luôn fetch URL mới khi có s3_key >>>
+                                    fetchAudioUrlFromKey(s3Key, timestamp); // Truyền timestamp vào
+                                } else {
+                                    // Mục mới nhất không có audio
+                                    Log.i(TAG, "Latest alert has no s3_key. Timestamp: " + timestamp);
+                                    // Chỉ cập nhật thời gian, không reset audio player, ẩn controls
+                                    updateLastNoiseTime(timestamp);
+                                    lastReceivedAudioUrl = null; // Đảm bảo không có URL cũ
+                                    updateAudioControlsVisibility(false);
+                                }
+                            } else {
+                                // Không có lịch sử nào trên server
+                                Log.i(TAG, "No alert history found on server.");
+                                updateLastNoiseTime(null); // Hiển thị "Chưa có"
+                                lastReceivedAudioUrl = null;
+                                updateAudioControlsVisibility(false);
+                            }
+                        } else {
+                            String message = response.optString("message", "Unknown server success error");
+                            Log.e(TAG, "Server returned success=false fetching history: " + message);
+                            Toast.makeText(MainActivity.this, "Lỗi server lấy lịch sử", Toast.LENGTH_SHORT).show();
+                        }
+                    } catch (JSONException e) {
+                        Log.e(TAG, "Error parsing latest history JSON response", e);
+                        Toast.makeText(MainActivity.this, "Lỗi xử lý dữ liệu lịch sử", Toast.LENGTH_SHORT).show();
+                    }
+                },
+                error -> {
+                    Log.e(TAG, "Volley error fetching latest history: " + error.toString());
+                    Toast.makeText(MainActivity.this, "Lỗi mạng lấy lịch sử", Toast.LENGTH_SHORT).show();
+                });
+
+        jsonObjectRequest.setTag(VOLLEY_TAG); // Gắn tag để có thể hủy
+        requestQueue.add(jsonObjectRequest);
+    }
+
+    /**
+     * Fetches the pre-signed audio URL from the server using the S3 key.
+     * @param s3Key The S3 key of the audio file.
+     * @param alertTimestamp The timestamp of the alert (optional, for updating UI).
+     */
+    private void fetchAudioUrlFromKey(String s3Key, @androidx.annotation.Nullable String alertTimestamp) {
+        String apiUrl = GET_AUDIO_URL_API + "?s3_key=" + Uri.encode(s3Key);
+        Log.d(TAG, "Fetching S3 URL from: " + apiUrl);
+
+        StringRequest stringRequest = new StringRequest(Request.Method.GET, apiUrl,
+                response -> {
+                    Log.d(TAG, "S3 URL response: " + response);
+                    try {
+                        JSONObject jsonResponse = new JSONObject(response);
+                        String status = jsonResponse.getString("status");
+                        if ("success".equals(status)) {
+                            String presignedUrl = jsonResponse.getString("url");
+                            Log.i(TAG, "Got pre-signed URL: " + presignedUrl);
+
+                            // <<< Chỉ reset và cập nhật nếu URL mới khác URL cũ >>>
+                            if (!Objects.equals(presignedUrl, lastReceivedAudioUrl)) {
+                                Log.d(TAG, "New audio URL fetched. Resetting state.");
+                                resetLastAudioPlaybackState(); // Reset trước khi cập nhật URL mới
+                                lastReceivedAudioUrl = presignedUrl;
+                                updateLastNoiseTime(alertTimestamp); // Cập nhật thời gian từ alert
+                                updateAudioControlsVisibility(true); // Hiển thị controls
+                            } else {
+                                Log.d(TAG, "Fetched URL is the same as the current one. No state reset needed.");
+                                // Đảm bảo controls vẫn hiển thị nếu URL không đổi
+                                updateLastNoiseTime(alertTimestamp);
+                                updateAudioControlsVisibility(true);
+                            }
+                        } else {
+                            String message = jsonResponse.optString("message", "Failed to get URL");
+                            Log.e(TAG, "Server error getting S3 URL: " + message);
+                            Toast.makeText(MainActivity.this, getString(R.string.audio_error_url) + ": " + message, Toast.LENGTH_LONG).show();
+                            // Nếu không lấy được URL, ẩn controls
+                            lastReceivedAudioUrl = null;
+                            updateAudioControlsVisibility(false);
+                            updateLastNoiseTime(alertTimestamp); // Vẫn cập nhật thời gian của alert
+                        }
+                    } catch (JSONException e) {
+                        Log.e(TAG, "Error parsing S3 URL JSON response", e);
+                        Toast.makeText(MainActivity.this, R.string.audio_error_url_parsing, Toast.LENGTH_LONG).show();
+                        lastReceivedAudioUrl = null;
+                        updateAudioControlsVisibility(false);
+                        updateLastNoiseTime(alertTimestamp);
+                    }
+                },
+                error -> {
+                    Log.e(TAG, "Volley error fetching S3 URL: " + error.toString());
+                    Toast.makeText(MainActivity.this, R.string.audio_error_url_network, Toast.LENGTH_LONG).show();
+                    lastReceivedAudioUrl = null;
+                    updateAudioControlsVisibility(false);
+                    updateLastNoiseTime(alertTimestamp);
+                });
+
+        stringRequest.setTag(VOLLEY_TAG); // Gắn tag
+        requestQueue.add(stringRequest);
+    }
+
+    // --- Timestamp Formatting Helper ---
+    /**
+     * Formats an ISO 8601 timestamp string into a displayable format (dd/MM/yyyy HH:mm:ss).
+     * Returns the original string if parsing fails.
+     * @param isoTimestamp The ISO 8601 timestamp string.
+     * @return Formatted string or the original string on error.
+     */
+    private String formatDisplayTimestamp(String isoTimestamp) {
+        if (isoTimestamp == null) return getString(R.string.last_noise_time_none);
+        // Các định dạng có thể nhận được từ Firestore hoặc server
+        SimpleDateFormat[] possibleInputFormats = {
+                new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSS'Z'", Locale.US), // UTC with microseconds
+                new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US),        // UTC without microseconds
+                new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX", Locale.US),// Offset with microseconds
+                new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssXXX", Locale.US),       // Offset without microseconds
+                new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", Locale.US)            // Simple ISO format assumed UTC if no offset
+        };
+        // Set TimeZone cho các định dạng UTC
+        possibleInputFormats[0].setTimeZone(TimeZone.getTimeZone("UTC"));
+        possibleInputFormats[1].setTimeZone(TimeZone.getTimeZone("UTC"));
+        possibleInputFormats[4].setTimeZone(TimeZone.getTimeZone("UTC")); // Assume UTC if no offset info
+
+        Date date = null;
+        for (SimpleDateFormat format : possibleInputFormats) {
+            try {
+                date = format.parse(isoTimestamp);
+                if (date != null) break; // Stop if parsing succeeds
+            } catch (ParseException e) {
+                // Try next format
+            }
+        }
+
+        if (date != null) {
+            SimpleDateFormat outputFormat = new SimpleDateFormat("dd/MM/yyyy HH:mm:ss", Locale.getDefault());
+            // Output theo múi giờ địa phương của thiết bị
+            outputFormat.setTimeZone(TimeZone.getDefault());
+            return outputFormat.format(date);
+        } else {
+            Log.w(TAG, "Could not parse timestamp: " + isoTimestamp);
+            return isoTimestamp; // Trả về chuỗi gốc nếu không parse được
+        }
+    }
+
     // ---------------------------------
 }

@@ -10,20 +10,14 @@
     <string name="default_notification_channel_name">Thông báo chung</string>
     <string name="default_notification_channel_description">Kênh thông báo mặc định cho Firebase Cloud Messaging</string>
 
-    <string name="fcm_token_label">FCM Token hiện tại:</string>
-    <string name="token_not_available">Token chưa có sẵn</string>
-    <string name="play_audio">Nghe Audio</string>
-    <string name="pause_audio">Tạm dừng</string>
-    <string name="audio_status_idle">Trạng thái: Chờ</string>
-    <string name="audio_status_preparing">Trạng thái: Đang chuẩn bị...</string>
-    <string name="audio_status_playing">Trạng thái: Đang phát</string>
-    <string name="audio_status_paused">Trạng thái: Tạm dừng</string>
-    <string name="audio_status_completed">Trạng thái: Hoàn thành</string>
-    <string name="audio_status_error">Trạng thái: Lỗi phát</string>
-    <string name="no_audio_url">Không có URL audio để phát.</string>
-    <string name="error_playing_audio">Lỗi khi phát audio: %1$s</string>
-    <string name="view_realtime_chart_button">Xem biểu đồ âm thanh realtime</string>
+    <string name="greeting_user">Xin chào!</string>
+    <string name="device_status_label">Trạng thái thiết bị:</string>
+    <string name="device_status_unknown">Chưa xác định</string>
+    <string name="device_status_online">Đang kết nối</string> <string name="device_status_offline">Ngoại tuyến</string> <string name="last_noise_time_label">Tiếng ồn gần nhất:</string>
+    <string name="last_noise_time_none">Chưa có</string>
+    <string name="play_pause_button_desc">Nút Phát/Tạm dừng</string>
 
+    <string name="view_realtime_chart_button">Xem biểu đồ âm thanh realtime</string>
     <string name="chart_activity_title">Biểu đồ âm thanh Realtime</string>
     <string name="back_button">Quay lại</string>
     <string name="chart_description">Biểu đồ biên độ âm thanh theo thời gian</string>
@@ -38,6 +32,9 @@
     <string name="history_error_network">Lỗi mạng khi tải lịch sử.</string>
     <string name="history_error_server">Lỗi từ server khi tải lịch sử</string>
     <string name="history_error_parsing">Lỗi xử lý dữ liệu lịch sử.</string>
+    <string name="play_button_label">Nghe</string>
+    <string name="no_audio_for_item">Không có audio cho mục này.</string>
+
     <string name="audio_fetching_url">Đang lấy link audio...</string>
     <string name="audio_error_url">Không thể lấy link audio</string>
     <string name="audio_error_url_parsing">Lỗi xử lý link audio.</string>
@@ -47,6 +44,4 @@
     <string name="audio_completed">Phát audio hoàn tất.</string>
     <string name="audio_error_preparing">Lỗi chuẩn bị audio.</string>
     <string name="audio_error_playback">Lỗi khi phát audio.</string>
-    <string name="audio_paused_history">Đã tạm dừng audio.</string>
-    <string name="play_button_label">Nghe</string>
-    <string name="no_audio_for_item">Không có audio cho mục này.</string> <string name="play_pause_button_desc">Nút Phát/Tạm dừng</string> </resources>
+    <string name="audio_paused_history">Đã tạm dừng audio.</string> <string name="audio_paused_main">Đã tạm dừng audio.</string> <string name="no_audio_url">Không có URL audio để phát.</string> <string name="error_playing_audio">Lỗi khi phát audio: %1$s</string> </resources>

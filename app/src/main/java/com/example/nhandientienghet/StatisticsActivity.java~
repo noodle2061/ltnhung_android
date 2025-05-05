@@ -1,0 +1,299 @@
+package com.example.nhandientienghet;
+
+import android.graphics.Color;
+import android.os.Bundle;
+import android.util.Log;
+import android.view.View;
+import android.widget.ImageButton;
+import android.widget.ProgressBar;
+import android.widget.TextView;
+import android.widget.Toast;
+
+import androidx.activity.EdgeToEdge;
+import androidx.annotation.NonNull;
+import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+
+import com.android.volley.Request;
+import com.android.volley.RequestQueue;
+import com.android.volley.toolbox.JsonObjectRequest;
+import com.android.volley.toolbox.Volley;
+import com.github.mikephil.charting.charts.BarChart;
+import com.github.mikephil.charting.components.XAxis;
+import com.github.mikephil.charting.data.BarData;
+import com.github.mikephil.charting.data.BarDataSet;
+import com.github.mikephil.charting.data.BarEntry;
+import com.github.mikephil.charting.formatter.IndexAxisValueFormatter;
+import com.github.mikephil.charting.utils.ColorTemplate;
+
+import org.json.JSONException;
+import org.json.JSONObject;
+
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Calendar;
+import java.util.Locale;
+
+public class StatisticsActivity extends AppCompatActivity {
+
+    private static final String TAG = "StatisticsActivity";
+    // Thay thế bằng URL server Flask của bạn khi sẵn sàng
+    private static final String BASE_URL = "http://192.168.56.103:5000"; // <<< THAY THẾ IP/PORT SERVER
+    private static final String WEEKLY_STATS_ENDPOINT = "/statistics/weekly";
+    private static final String VOLLEY_TAG_STATS = "StatisticsVolley";
+
+    private ImageButton btnPreviousWeek, btnNextWeek;
+    private TextView tvSelectedWeek, tvTotalAlertsValue, tvStatisticsStatus;
+    private BarChart barChartWeeklyStats;
+    private ProgressBar progressBarStatistics;
+
+    private RequestQueue requestQueue;
+    private Calendar currentWeekStart; // Lưu ngày đầu tiên (Thứ Hai) của tuần đang hiển thị
+    private SimpleDateFormat weekDisplayFormat = new SimpleDateFormat("dd/MM/yyyy", Locale.getDefault());
+    private SimpleDateFormat apiDateFormat = new SimpleDateFormat("yyyy-MM-dd", Locale.getDefault()); // Format cho API
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        EdgeToEdge.enable(this);
+        setContentView(R.layout.activity_statistics);
+
+        // Ánh xạ các view
+        btnPreviousWeek = findViewById(R.id.btnPreviousWeek);
+        btnNextWeek = findViewById(R.id.btnNextWeek);
+        tvSelectedWeek = findViewById(R.id.tvSelectedWeek);
+        tvTotalAlertsValue = findViewById(R.id.tvTotalAlertsValue);
+        tvStatisticsStatus = findViewById(R.id.tvStatisticsStatus);
+        barChartWeeklyStats = findViewById(R.id.barChartWeeklyStats);
+        progressBarStatistics = findViewById(R.id.progressBarStatistics);
+
+        // Khởi tạo RequestQueue của Volley
+        requestQueue = Volley.newRequestQueue(this);
+
+        // Khởi tạo Calendar và đặt về đầu tuần hiện tại (Thứ Hai)
+        currentWeekStart = Calendar.getInstance();
+        setCalendarToMonday(currentWeekStart);
+
+        // Thiết lập ban đầu cho BarChart
+        setupBarChart();
+
+        // Cập nhật UI và tải dữ liệu cho tuần hiện tại
+        updateWeekDisplay();
+        fetchWeeklyStats();
+
+        // Xử lý sự kiện click nút
+        btnPreviousWeek.setOnClickListener(v -> changeWeek(-1));
+        btnNextWeek.setOnClickListener(v -> changeWeek(1));
+
+        // Xử lý Window Insets
+        ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main_statistics), (v, insets) -> {
+            Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
+            v.setPadding(systemBars.left, systemBars.top, systemBars.right, systemBars.bottom);
+            return insets;
+        });
+
+        // Set tiêu đề cho Activity
+        setTitle(R.string.statistics_activity_title);
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // Hủy các request Volley đang chờ khi activity dừng
+        if (requestQueue != null) {
+            requestQueue.cancelAll(VOLLEY_TAG_STATS);
+        }
+    }
+
+    /**
+     * Thiết lập cấu hình ban đầu cho BarChart.
+     */
+    private void setupBarChart() {
+        barChartWeeklyStats.getDescription().setEnabled(false); // Tắt mô tả mặc định
+        barChartWeeklyStats.setDrawGridBackground(false);
+        barChartWeeklyStats.setDrawBarShadow(false);
+        barChartWeeklyStats.setHighlightFullBarEnabled(false);
+        barChartWeeklyStats.setNoDataText("Chưa có dữ liệu thống kê."); // Text khi không có data
+
+        // Cấu hình trục X (Ngày trong tuần)
+        XAxis xAxis = barChartWeeklyStats.getXAxis();
+        xAxis.setPosition(XAxis.XAxisPosition.BOTTOM);
+        xAxis.setDrawGridLines(false);
+        xAxis.setGranularity(1f); // Khoảng cách giữa các cột là 1
+        // Đặt nhãn cho trục X (T2, T3, ..., CN)
+        final String[] days = new String[]{"T2", "T3", "T4", "T5", "T6", "T7", "CN"};
+        xAxis.setValueFormatter(new IndexAxisValueFormatter(days));
+
+        // Cấu hình trục Y bên trái (Số lượng)
+        barChartWeeklyStats.getAxisLeft().setAxisMinimum(0f); // Bắt đầu từ 0
+        barChartWeeklyStats.getAxisLeft().setDrawGridLines(true);
+
+        // Tắt trục Y bên phải
+        barChartWeeklyStats.getAxisRight().setEnabled(false);
+
+        // Tắt legend
+        barChartWeeklyStats.getLegend().setEnabled(false);
+    }
+
+    /**
+     * Đặt Calendar về ngày Thứ Hai của tuần chứa ngày hiện tại trong Calendar.
+     * @param calendar Calendar cần điều chỉnh.
+     */
+    private void setCalendarToMonday(Calendar calendar) {
+        // Lấy ngày trong tuần (Chủ Nhật = 1, Thứ Hai = 2, ..., Thứ Bảy = 7)
+        int dayOfWeek = calendar.get(Calendar.DAY_OF_WEEK);
+        // Tính số ngày cần trừ đi để về Thứ Hai
+        int daysToSubtract = (dayOfWeek == Calendar.SUNDAY) ? -6 : (Calendar.MONDAY - dayOfWeek);
+        calendar.add(Calendar.DAY_OF_YEAR, daysToSubtract);
+        // Đặt giờ, phút, giây, mili giây về 0 để đảm bảo bắt đầu từ 00:00:00
+        calendar.set(Calendar.HOUR_OF_DAY, 0);
+        calendar.set(Calendar.MINUTE, 0);
+        calendar.set(Calendar.SECOND, 0);
+        calendar.set(Calendar.MILLISECOND, 0);
+    }
+
+    /**
+     * Thay đổi tuần đang hiển thị.
+     * @param weeksToAdd Số tuần cần thêm (âm để lùi lại).
+     */
+    private void changeWeek(int weeksToAdd) {
+        currentWeekStart.add(Calendar.WEEK_OF_YEAR, weeksToAdd);
+        updateWeekDisplay();
+        fetchWeeklyStats();
+    }
+
+    /**
+     * Cập nhật TextView hiển thị khoảng ngày của tuần đang chọn.
+     */
+    private void updateWeekDisplay() {
+        Calendar weekEnd = (Calendar) currentWeekStart.clone();
+        weekEnd.add(Calendar.DAY_OF_YEAR, 6); // Thêm 6 ngày để đến Chủ Nhật
+        String weekText = weekDisplayFormat.format(currentWeekStart.getTime()) + " - " + weekDisplayFormat.format(weekEnd.getTime());
+        tvSelectedWeek.setText(weekText);
+    }
+
+    /**
+     * Gọi API để lấy dữ liệu thống kê cho tuần hiện tại (được lưu trong currentWeekStart).
+     */
+    private void fetchWeeklyStats() {
+        // Hiển thị ProgressBar, ẩn lỗi cũ (nếu có), xóa biểu đồ cũ
+        showLoading(true);
+        clearChart();
+        tvTotalAlertsValue.setText("..."); // Placeholder
+
+        // Tạo URL với tham số ngày bắt đầu tuần
+        String startDateStr = apiDateFormat.format(currentWeekStart.getTime());
+        String url = BASE_URL + WEEKLY_STATS_ENDPOINT + "?start_date=" + startDateStr; // Server sẽ tự tính tuần từ start_date
+        Log.d(TAG, "Fetching weekly stats from: " + url);
+
+        JsonObjectRequest jsonObjectRequest = new JsonObjectRequest(
+                Request.Method.GET, url, null,
+                response -> {
+                    Log.d(TAG, "Weekly stats response received: " + response.toString());
+                    showLoading(false);
+                    try {
+                        String status = response.getString("status");
+                        if ("success".equals(status)) {
+                            // Cập nhật tổng số
+                            int totalAlerts = response.getInt("total_alerts");
+                            tvTotalAlertsValue.setText(String.valueOf(totalAlerts));
+
+                            // Lấy dữ liệu theo ngày
+                            JSONObject alertsPerDay = response.getJSONObject("alerts_per_day");
+                            populateBarChart(alertsPerDay);
+                            tvStatisticsStatus.setVisibility(View.GONE); // Ẩn text trạng thái nếu thành công
+                        } else {
+                            String message = response.optString("message", "Lỗi không xác định từ server");
+                            Log.e(TAG, "Server returned status=error: " + message);
+                            showError(message);
+                        }
+                    } catch (JSONException e) {
+                        Log.e(TAG, "Error parsing weekly stats JSON response", e);
+                        showError("Lỗi xử lý dữ liệu thống kê.");
+                    }
+                },
+                error -> {
+                    Log.e(TAG, "Volley error fetching weekly stats: " + error.toString());
+                    showLoading(false);
+                    // Phân tích lỗi Volley cụ thể hơn nếu cần
+                    String errorMsg = "Lỗi mạng khi tải thống kê.";
+                    if (error.networkResponse != null) {
+                        errorMsg += " (Code: " + error.networkResponse.statusCode + ")";
+                    }
+                    showError(errorMsg);
+                });
+
+        jsonObjectRequest.setTag(VOLLEY_TAG_STATS); // Gắn tag để có thể hủy
+        requestQueue.add(jsonObjectRequest);
+    }
+
+    /**
+     * Điền dữ liệu vào BarChart từ JSON object alerts_per_day.
+     * @param alertsPerDay JSONObject chứa số lượng cảnh báo cho từng ngày ("monday", "tuesday",...).
+     */
+    private void populateBarChart(JSONObject alertsPerDay) throws JSONException {
+        ArrayList<BarEntry> entries = new ArrayList<>();
+        // Thứ tự các ngày trong tuần cho biểu đồ và JSON key
+        String[] daysOrder = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"};
+
+        for (int i = 0; i < daysOrder.length; i++) {
+            // Lấy số lượng từ JSON, mặc định là 0 nếu key không tồn tại
+            int count = alertsPerDay.optInt(daysOrder[i], 0);
+            // Tạo BarEntry: trục X là index (0-6), trục Y là số lượng
+            entries.add(new BarEntry(i, count));
+        }
+
+        if (entries.isEmpty()) {
+            showError("Không có dữ liệu thống kê cho tuần này.");
+            return;
+        }
+
+        BarDataSet dataSet = new BarDataSet(entries, "Số lượng cảnh báo"); // Label cho dataset (không hiển thị vì legend tắt)
+        dataSet.setColors(ColorTemplate.MATERIAL_COLORS); // Sử dụng bộ màu có sẵn
+        dataSet.setValueTextColor(Color.BLACK);
+        dataSet.setValueTextSize(10f);
+        dataSet.setDrawValues(true); // Hiển thị giá trị trên mỗi cột
+
+        BarData barData = new BarData(dataSet);
+        barData.setBarWidth(0.7f); // Điều chỉnh độ rộng của cột
+
+        barChartWeeklyStats.setData(barData);
+        barChartWeeklyStats.invalidate(); // Vẽ lại biểu đồ
+        barChartWeeklyStats.animateY(1000); // Thêm hiệu ứng animation
+    }
+
+    /**
+     * Hiển thị hoặc ẩn ProgressBar và các nút điều hướng.
+     * @param isLoading True để hiển thị trạng thái tải, False để ẩn.
+     */
+    private void showLoading(boolean isLoading) {
+        progressBarStatistics.setVisibility(isLoading ? View.VISIBLE : View.GONE);
+        tvStatisticsStatus.setVisibility(View.GONE); // Luôn ẩn text trạng thái khi bắt đầu tải
+        // Vô hiệu hóa nút khi đang tải để tránh gọi API liên tục
+        btnPreviousWeek.setEnabled(!isLoading);
+        btnNextWeek.setEnabled(!isLoading);
+        // Ẩn biểu đồ khi đang tải để tránh hiển thị dữ liệu cũ
+        barChartWeeklyStats.setVisibility(isLoading ? View.INVISIBLE : View.VISIBLE);
+    }
+
+    /**
+     * Hiển thị thông báo lỗi và xóa biểu đồ.
+     * @param message Nội dung lỗi cần hiển thị.
+     */
+    private void showError(String message) {
+        tvStatisticsStatus.setText(message);
+        tvStatisticsStatus.setVisibility(View.VISIBLE);
+        tvTotalAlertsValue.setText("N/A");
+        clearChart();
+    }
+
+    /**
+     * Xóa dữ liệu khỏi biểu đồ.
+     */
+    private void clearChart() {
+        barChartWeeklyStats.clear();
+        barChartWeeklyStats.invalidate(); // Vẽ lại biểu đồ trống
+    }
+}

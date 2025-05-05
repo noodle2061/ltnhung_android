@@ -33,34 +33,12 @@
                 app:layout_constraintStart_toStartOf="parent"/>
 
             <TextView
-                android:id="@+id/tvDeviceStatusLabel"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginTop="12dp"
-                android:text="@string/device_status_label"
-                android:textStyle="bold"
-                app:layout_constraintTop_toBottomOf="@id/tvGreeting"
-                app:layout_constraintStart_toStartOf="parent"/>
-
-            <TextView
-                android:id="@+id/tvDeviceStatus"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:layout_marginStart="8dp"
-                android:text="@string/device_status_unknown"
-                app:layout_constraintStart_toEndOf="@id/tvDeviceStatusLabel"
-                app:layout_constraintTop_toTopOf="@id/tvDeviceStatusLabel"
-                app:layout_constraintBottom_toBottomOf="@id/tvDeviceStatusLabel"/>
-
-            <TextView
                 android:id="@+id/tvLastNoiseTimeLabel"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginTop="8dp"
-                android:text="@string/last_noise_time_label"
+                android:layout_marginTop="12dp"  android:text="@string/last_noise_time_label"
                 android:textStyle="bold"
-                app:layout_constraintTop_toBottomOf="@id/tvDeviceStatusLabel"
-                app:layout_constraintStart_toStartOf="parent"/>
+                app:layout_constraintTop_toBottomOf="@id/tvGreeting" app:layout_constraintStart_toStartOf="parent"/>
 
             <TextView
                 android:id="@+id/tvLastNoiseTime"
@@ -84,8 +62,7 @@
                 android:src="@android:drawable/ic_media_play"
                 android:visibility="invisible"
                 app:layout_constraintEnd_toEndOf="parent"
-                app:layout_constraintTop_toBottomOf="@id/tvLastNoiseTimeLabel"
-                app:layout_constraintBottom_toBottomOf="parent"
+                app:layout_constraintTop_toBottomOf="@id/tvLastNoiseTimeLabel" app:layout_constraintBottom_toBottomOf="parent"
                 app:tint="?attr/colorAccent"
                 tools:visibility="visible" />
 
@@ -129,5 +106,25 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@+id/btnViewChart" />
+
+    <Button
+        android:id="@+id/btnStatistics"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/view_statistics_button"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnViewHistory" />
+
+    <Button
+        android:id="@+id/btnEditInfo"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:text="@string/edit_info_button"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/btnStatistics" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

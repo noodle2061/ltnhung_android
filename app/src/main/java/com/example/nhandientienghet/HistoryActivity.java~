@@ -4,6 +4,8 @@ import android.media.AudioAttributes;
 import android.media.MediaPlayer;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler; // Import Handler
+import android.os.Looper; // Import Looper
 import android.os.PowerManager;
 import android.util.Log;
 import android.view.View;
@@ -21,8 +23,6 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.android.volley.Request;
 import com.android.volley.RequestQueue;
-import com.android.volley.Response;
-import com.android.volley.VolleyError;
 import com.android.volley.toolbox.JsonObjectRequest;
 import com.android.volley.toolbox.StringRequest;
 import com.android.volley.toolbox.Volley;
@@ -36,10 +36,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 // Implement interface đã đổi tên
-public class HistoryActivity extends AppCompatActivity implements HistoryAdapter.OnItemClickListener {
+public class HistoryActivity extends AppCompatActivity implements HistoryAdapter.OnItemInteractionListener {
 
     private static final String TAG = "HistoryActivity";
-    // Thay thế bằng URL server Flask của bạn
     private static final String SERVER_BASE_URL = "http://192.168.56.103:5000"; // <<< THAY THẾ IP/PORT CỦA BẠN
     private static final String HISTORY_API_URL = SERVER_BASE_URL + "/alert_history";
     private static final String GET_AUDIO_URL_API = SERVER_BASE_URL + "/get_audio_url";
@@ -54,6 +53,14 @@ public class HistoryActivity extends AppCompatActivity implements HistoryAdapter
     private MediaPlayer mediaPlayer;
     private PowerManager.WakeLock wakeLock;
 
+    // --- State Management for Playback ---
+    private int currentPlayingPosition = -1; // Vị trí item đang phát
+    private boolean isAudioPlaying = false; // Flag trạng thái phát
+    private boolean isAudioPrepared = false; // Flag trạng thái chuẩn bị
+    private String currentPlayingS3Key = null; // S3 key của item đang phát
+    private Handler progressUpdateHandler; // Handler để cập nhật progress bar
+    private Runnable progressUpdateRunnable; // Runnable cho handler
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -66,17 +73,45 @@ public class HistoryActivity extends AppCompatActivity implements HistoryAdapter
 
         recyclerViewHistory.setLayoutManager(new LinearLayoutManager(this));
         historyItemList = new ArrayList<>();
-        // Truyền 'this' vì Activity implement OnItemClickListener đã cập nhật
+        // Truyền 'this' vì Activity implement OnItemInteractionListener đã cập nhật
         historyAdapter = new HistoryAdapter(this, historyItemList, this);
         recyclerViewHistory.setAdapter(historyAdapter);
 
         requestQueue = Volley.newRequestQueue(this);
 
+        // Khởi tạo WakeLock
         PowerManager powerManager = (PowerManager) getSystemService(POWER_SERVICE);
         if (powerManager != null) {
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "NhanDienTiengHet::HistoryAudioWakeLock");
             wakeLock.setReferenceCounted(false);
         }
+
+        // Khởi tạo Handler và Runnable cho progress bar
+        progressUpdateHandler = new Handler(Looper.getMainLooper());
+        progressUpdateRunnable = new Runnable() {
+            @Override
+            public void run() {
+                if (mediaPlayer != null && isAudioPlaying && isAudioPrepared) {
+                    try {
+                        int currentPosition = mediaPlayer.getCurrentPosition();
+                        int duration = mediaPlayer.getDuration();
+                        if (duration > 0) {
+                            int progress = (int) (((float) currentPosition / duration) * 100);
+                            // Cập nhật progress trong adapter
+                            historyAdapter.updateProgress(progress);
+                        }
+                        // Lập lịch chạy lại sau 500ms
+                        progressUpdateHandler.postDelayed(this, 500);
+                    } catch (IllegalStateException e) {
+                        Log.e(TAG, "IllegalStateException while getting MediaPlayer position/duration", e);
+                        stopProgressUpdater(); // Dừng cập nhật nếu có lỗi
+                    }
+                } else {
+                    stopProgressUpdater(); // Dừng nếu không còn phát
+                }
+            }
+        };
+
 
         ViewCompat.setOnApplyWindowInsetsListener(findViewById(R.id.main), (v, insets) -> {
             Insets systemBars = insets.getInsets(WindowInsetsCompat.Type.systemBars());
@@ -93,16 +128,22 @@ public class HistoryActivity extends AppCompatActivity implements HistoryAdapter
         if (requestQueue != null) {
             requestQueue.cancelAll(TAG);
         }
-        releaseMediaPlayer();
-        releaseWakeLock();
+        stopProgressUpdater(); // Dừng handler
+        releaseMediaPlayer(); // Giải phóng MediaPlayer
+        releaseWakeLock(); // Giải phóng WakeLock
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        if (mediaPlayer != null && mediaPlayer.isPlaying()) {
+        // Tạm dừng audio nếu đang phát khi activity pause
+        if (mediaPlayer != null && isAudioPlaying) {
             try {
                 mediaPlayer.pause();
+                isAudioPlaying = false; // Cập nhật trạng thái
+                stopProgressUpdater(); // Dừng cập nhật progress
+                // Cập nhật UI của item đang phát
+                historyAdapter.setPlayingState(currentPlayingPosition, false);
                 Toast.makeText(this, R.string.audio_paused_history, Toast.LENGTH_SHORT).show();
             } catch (IllegalStateException e) {
                 Log.e(TAG, "Error pausing MediaPlayer onPause", e);
@@ -110,7 +151,14 @@ public class HistoryActivity extends AppCompatActivity implements HistoryAdapter
         }
     }
 
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // Không tự động resume audio khi quay lại activity, để người dùng tự nhấn play
+    }
+
     private void fetchHistoryData() {
+        // Giữ nguyên hàm fetchHistoryData
         Log.d(TAG, "Fetching history data from: " + HISTORY_API_URL);
         progressBarHistory.setVisibility(View.VISIBLE);
         tvHistoryStatus.setVisibility(View.GONE);
@@ -164,31 +212,75 @@ public class HistoryActivity extends AppCompatActivity implements HistoryAdapter
     }
 
     private void showError(String message) {
+        // Giữ nguyên hàm showError
         tvHistoryStatus.setText(message);
         tvHistoryStatus.setVisibility(View.VISIBLE);
         recyclerViewHistory.setVisibility(View.GONE);
         Toast.makeText(this, message, Toast.LENGTH_LONG).show();
     }
 
-    // --- Implement phương thức từ HistoryAdapter.OnItemClickListener (ĐÃ ĐỔI TÊN) ---
-
-    // Bỏ phương thức này nếu không cần xử lý click vào cả item
-    // @Override
-    // public void onItemClick(HistoryItem item) {
-    //     Log.d(TAG, "Item clicked: ID = " + item.getId() + ", IP = " + item.getClientIp());
-    // }
+    // --- Implement phương thức từ HistoryAdapter.OnItemInteractionListener ---
 
     @Override
-    public void onPlayButtonClick(String s3Key) {
-        // Xử lý khi người dùng nhấn vào nút Play
-        Log.d(TAG, "Play button clicked for key: " + s3Key);
-        // Gọi API để lấy URL tạm thời và phát audio
-        fetchAndPlayAudio(s3Key);
+    public void onPlayPauseClick(int position, HistoryItem item) {
+        Log.d(TAG, "onPlayPauseClick - Position: " + position + ", Current Playing: " + currentPlayingPosition);
+        if (item.getS3Key() == null) {
+            Toast.makeText(this, R.string.no_audio_for_item, Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        if (position == currentPlayingPosition) {
+            // Click vào item đang phát/tạm dừng
+            if (mediaPlayer != null && isAudioPrepared) {
+                if (isAudioPlaying) {
+                    // Đang phát -> Tạm dừng
+                    try {
+                        mediaPlayer.pause();
+                        isAudioPlaying = false;
+                        stopProgressUpdater();
+                        historyAdapter.setPlayingState(position, false); // Cập nhật UI
+                        Log.i(TAG, "Audio paused by user.");
+                    } catch (IllegalStateException e) {
+                        Log.e(TAG, "Error pausing MediaPlayer", e);
+                        resetPlaybackState(); // Reset nếu lỗi
+                    }
+                } else {
+                    // Đang tạm dừng -> Tiếp tục phát
+                    try {
+                        mediaPlayer.start();
+                        isAudioPlaying = true;
+                        startProgressUpdater(); // Bắt đầu lại cập nhật progress
+                        historyAdapter.setPlayingState(position, true); // Cập nhật UI
+                        Log.i(TAG, "Audio resumed by user.");
+                    } catch (IllegalStateException e) {
+                        Log.e(TAG, "Error resuming MediaPlayer", e);
+                        resetPlaybackState(); // Reset nếu lỗi
+                    }
+                }
+            } else {
+                // Trường hợp mediaPlayer null hoặc chưa prepared (có thể do lỗi trước đó)
+                Log.w(TAG, "Play/Pause clicked on current item, but MediaPlayer is not ready. Re-fetching.");
+                fetchAndPlayAudio(position, item.getS3Key()); // Thử fetch và play lại
+            }
+        } else {
+            // Click vào item mới -> Dừng item cũ (nếu có) và bắt đầu phát item mới
+            Log.i(TAG, "Playing new item at position: " + position);
+            resetPlaybackState(); // Dừng và reset trạng thái cũ
+            fetchAndPlayAudio(position, item.getS3Key()); // Fetch và play item mới
+        }
     }
 
-    // --- Các hàm xử lý phát audio từ S3 (fetchAndPlayAudio, playAudioFromUrl, releaseMediaPlayer, acquireWakeLock, releaseWakeLock) giữ nguyên ---
-    private void fetchAndPlayAudio(String s3Key) {
-        releaseMediaPlayer();
+
+    // --- Các hàm xử lý phát audio ---
+
+    private void fetchAndPlayAudio(int position, String s3Key) {
+        // resetPlaybackState(); // Đã gọi ở onPlayPauseClick nếu cần
+        currentPlayingPosition = position; // Đặt vị trí đang xử lý
+        currentPlayingS3Key = s3Key;
+        isAudioPlaying = false; // Chưa phát
+        isAudioPrepared = false; // Chưa chuẩn bị
+        historyAdapter.setPlayingState(position, false); // Cập nhật UI (hiển thị loading/play icon)
+
         Toast.makeText(this, R.string.audio_fetching_url, Toast.LENGTH_SHORT).show();
 
         String apiUrl = GET_AUDIO_URL_API + "?s3_key=" + Uri.encode(s3Key);
@@ -203,20 +295,28 @@ public class HistoryActivity extends AppCompatActivity implements HistoryAdapter
                         if ("success".equals(status)) {
                             String presignedUrl = jsonResponse.getString("url");
                             Log.i(TAG, "Got pre-signed URL: " + presignedUrl);
-                            playAudioFromUrl(presignedUrl);
+                            // Chỉ play nếu item này vẫn là item đang được chọn
+                            if (position == currentPlayingPosition) {
+                                playAudioFromUrl(presignedUrl);
+                            } else {
+                                Log.w(TAG, "URL received for position " + position + " but user selected another item (" + currentPlayingPosition + "). Ignoring.");
+                            }
                         } else {
                             String message = jsonResponse.optString("message", "Failed to get URL");
                             Log.e(TAG, "Server error getting S3 URL: " + message);
                             Toast.makeText(HistoryActivity.this, getString(R.string.audio_error_url) + ": " + message, Toast.LENGTH_LONG).show();
+                            resetPlaybackState(); // Reset nếu lỗi lấy URL
                         }
                     } catch (JSONException e) {
                         Log.e(TAG, "Error parsing S3 URL JSON response", e);
                         Toast.makeText(HistoryActivity.this, R.string.audio_error_url_parsing, Toast.LENGTH_LONG).show();
+                        resetPlaybackState(); // Reset nếu lỗi parse
                     }
                 },
                 error -> {
                     Log.e(TAG, "Volley error fetching S3 URL: " + error.toString());
                     Toast.makeText(HistoryActivity.this, R.string.audio_error_url_network, Toast.LENGTH_LONG).show();
+                    resetPlaybackState(); // Reset nếu lỗi mạng
                 });
 
         stringRequest.setTag(TAG);
@@ -224,7 +324,7 @@ public class HistoryActivity extends AppCompatActivity implements HistoryAdapter
     }
 
     private void playAudioFromUrl(String url) {
-        releaseMediaPlayer();
+        releaseMediaPlayer(); // Đảm bảo player cũ đã được giải phóng
         acquireWakeLock();
 
         Toast.makeText(this, R.string.audio_preparing, Toast.LENGTH_SHORT).show();
@@ -241,29 +341,36 @@ public class HistoryActivity extends AppCompatActivity implements HistoryAdapter
         try {
             mediaPlayer.setDataSource(url);
             mediaPlayer.setOnPreparedListener(mp -> {
-                Log.i(TAG, "MediaPlayer prepared, starting playback.");
-                Toast.makeText(HistoryActivity.this, R.string.audio_playing, Toast.LENGTH_SHORT).show();
-                try {
-                    mp.start();
-                } catch (IllegalStateException e) {
-                    Log.e(TAG, "Error starting playback after prepare", e);
-                    Toast.makeText(HistoryActivity.this, R.string.audio_error_playback, Toast.LENGTH_LONG).show();
-                    releaseMediaPlayer();
-                    releaseWakeLock();
+                Log.i(TAG, "MediaPlayer prepared, starting playback for position: " + currentPlayingPosition);
+                isAudioPrepared = true;
+                // Chỉ bắt đầu phát nếu item này vẫn là item đang được chọn
+                if (mp != null && currentPlayingPosition != -1) {
+                    try {
+                        mp.start();
+                        isAudioPlaying = true;
+                        historyAdapter.setPlayingState(currentPlayingPosition, true); // Cập nhật UI -> pause icon
+                        startProgressUpdater(); // Bắt đầu cập nhật progress bar
+                        Toast.makeText(HistoryActivity.this, R.string.audio_playing, Toast.LENGTH_SHORT).show();
+                    } catch (IllegalStateException e) {
+                        Log.e(TAG, "Error starting playback after prepare", e);
+                        Toast.makeText(HistoryActivity.this, R.string.audio_error_playback, Toast.LENGTH_LONG).show();
+                        resetPlaybackState();
+                    }
+                } else {
+                    Log.w(TAG, "MediaPlayer prepared, but currentPlayingPosition is invalid or player is null. Not starting.");
+                    resetPlaybackState();
                 }
             });
             mediaPlayer.setOnCompletionListener(mp -> {
-                Log.i(TAG, "MediaPlayer playback completed.");
+                Log.i(TAG, "MediaPlayer playback completed for position: " + currentPlayingPosition);
                 Toast.makeText(HistoryActivity.this, R.string.audio_completed, Toast.LENGTH_SHORT).show();
-                releaseMediaPlayer();
-                releaseWakeLock();
+                resetPlaybackState(); // Reset trạng thái khi hoàn thành
             });
             mediaPlayer.setOnErrorListener((mp, what, extra) -> {
-                Log.e(TAG, "MediaPlayer Error: what=" + what + ", extra=" + extra);
+                Log.e(TAG, "MediaPlayer Error: what=" + what + ", extra=" + extra + " for position: " + currentPlayingPosition);
                 Toast.makeText(HistoryActivity.this, R.string.audio_error_playback, Toast.LENGTH_LONG).show();
-                releaseMediaPlayer();
-                releaseWakeLock();
-                return true;
+                resetPlaybackState(); // Reset trạng thái khi có lỗi
+                return true; // Đã xử lý lỗi
             });
 
             mediaPlayer.prepareAsync();
@@ -271,10 +378,30 @@ public class HistoryActivity extends AppCompatActivity implements HistoryAdapter
         } catch (IOException | IllegalArgumentException | SecurityException | IllegalStateException e) {
             Log.e(TAG, "Error setting data source or preparing MediaPlayer", e);
             Toast.makeText(this, R.string.audio_error_preparing, Toast.LENGTH_LONG).show();
-            releaseMediaPlayer();
-            releaseWakeLock();
+            resetPlaybackState(); // Reset nếu lỗi chuẩn bị
         }
     }
+
+    // Hàm reset trạng thái playback
+    private void resetPlaybackState() {
+        Log.d(TAG, "Resetting playback state. Previous playing position: " + currentPlayingPosition);
+        releaseMediaPlayer(); // Dừng và giải phóng player
+        stopProgressUpdater(); // Dừng cập nhật progress
+        releaseWakeLock(); // Giải phóng wakelock
+
+        int previousPosition = currentPlayingPosition;
+        currentPlayingPosition = -1;
+        isAudioPlaying = false;
+        isAudioPrepared = false;
+        currentPlayingS3Key = null;
+
+        // Cập nhật UI cho item cũ (nếu có) để reset về trạng thái mặc định
+        if (previousPosition != -1) {
+            historyAdapter.setPlayingState(previousPosition, false); // Đặt lại icon play
+            historyAdapter.updateProgress(0); // Đặt lại progress bar
+        }
+    }
+
 
     private void releaseMediaPlayer() {
         if (mediaPlayer != null) {
@@ -289,10 +416,13 @@ public class HistoryActivity extends AppCompatActivity implements HistoryAdapter
                 Log.e(TAG, "Error releasing MediaPlayer", e);
             } finally {
                 mediaPlayer = null;
+                isAudioPlaying = false;
+                isAudioPrepared = false;
             }
         }
     }
 
+    // --- WakeLock Handling (Giữ nguyên) ---
     private void acquireWakeLock() {
         if (wakeLock != null && !wakeLock.isHeld()) {
             try {
@@ -313,5 +443,17 @@ public class HistoryActivity extends AppCompatActivity implements HistoryAdapter
                 Log.e(TAG, "Error releasing WakeLock", e);
             }
         }
+    }
+
+    // --- Progress Updater Handling ---
+    private void startProgressUpdater() {
+        stopProgressUpdater(); // Dừng cái cũ trước khi bắt đầu cái mới
+        progressUpdateHandler.post(progressUpdateRunnable);
+        Log.d(TAG, "Started progress updater.");
+    }
+
+    private void stopProgressUpdater() {
+        progressUpdateHandler.removeCallbacks(progressUpdateRunnable);
+        Log.d(TAG, "Stopped progress updater.");
     }
 }

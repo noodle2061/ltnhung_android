@@ -52,6 +52,8 @@ dependencies {
     // MPAndroidChart
     implementation 'com.github.PhilJay:MPAndroidChart:v3.1.0'
 
+    implementation 'com.google.firebase:firebase-firestore'
+
     // <<< THÊM THƯ VIỆN VOLLEY >>>
     implementation 'com.android.volley:volley:1.2.1' // Phiên bản có thể thay đổi
 

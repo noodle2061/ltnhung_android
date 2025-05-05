@@ -176,7 +176,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
         // ... (Giữ nguyên hàm gửi token lên server)
         Log.i(TAG, "Preparing to send token to server...");
         executorService.execute(() -> {
-            String serverUrlString = "http://192.168.209.103:5000/register_token"; // <<< Kiểm tra lại IP nếu cần
+            String serverUrlString = "http://192.168.56.103:5000/register_token"; // <<< Kiểm tra lại IP nếu cần
             HttpURLConnection urlConnection = null;
             boolean success = false;
             String serverResponseMessage = "N/A";

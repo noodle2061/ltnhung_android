@@ -39,7 +39,7 @@ import java.util.List;
 public class HistoryActivity extends AppCompatActivity implements HistoryAdapter.OnItemInteractionListener {
 
     private static final String TAG = "HistoryActivity";
-    private static final String SERVER_BASE_URL = "http://192.168.56.103:5000"; // <<< THAY THẾ IP/PORT CỦA BẠN
+    private static final String SERVER_BASE_URL = "http://192.168.209.103:5000"; // <<< THAY THẾ IP/PORT CỦA BẠN
     private static final String HISTORY_API_URL = SERVER_BASE_URL + "/alert_history";
     private static final String GET_AUDIO_URL_API = SERVER_BASE_URL + "/get_audio_url";
 

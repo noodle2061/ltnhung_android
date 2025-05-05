@@ -13,7 +13,9 @@
     <string name="greeting_user">Xin chào!</string>
     <string name="device_status_label">Trạng thái thiết bị:</string>
     <string name="device_status_unknown">Chưa xác định</string>
-    <string name="device_status_online">Đang kết nối</string> <string name="device_status_offline">Ngoại tuyến</string> <string name="last_noise_time_label">Tiếng ồn gần nhất:</string>
+    <string name="device_status_online">Đang kết nối</string>
+    <string name="device_status_offline">Ngoại tuyến</string>
+    <string name="last_noise_time_label">Tiếng ồn gần nhất:</string>
     <string name="last_noise_time_none">Chưa có</string>
     <string name="play_pause_button_desc">Nút Phát/Tạm dừng</string>
 
@@ -44,4 +46,14 @@
     <string name="audio_completed">Phát audio hoàn tất.</string>
     <string name="audio_error_preparing">Lỗi chuẩn bị audio.</string>
     <string name="audio_error_playback">Lỗi khi phát audio.</string>
-    <string name="audio_paused_history">Đã tạm dừng audio.</string> <string name="audio_paused_main">Đã tạm dừng audio.</string> <string name="no_audio_url">Không có URL audio để phát.</string> <string name="error_playing_audio">Lỗi khi phát audio: %1$s</string> </resources>
+    <string name="audio_paused_history">Đã tạm dừng audio.</string>
+    <string name="audio_paused_main">Đã tạm dừng audio.</string>
+    <string name="no_audio_url">Không có URL audio để phát.</string>
+    <string name="error_playing_audio">Lỗi khi phát audio: %1$s</string>
+
+    <string name="view_statistics_button">Thống kê</string>
+    <string name="edit_info_button">Chỉnh sửa thông tin</string>
+    <string name="statistics_activity_title">Thống kê</string>
+    <string name="edit_info_activity_title">Chỉnh sửa thông tin</string>
+
+</resources>
